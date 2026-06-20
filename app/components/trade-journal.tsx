@@ -1,6 +1,10 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import {
+  formatTradeDateInput,
+  parseTradeDateInput,
+} from "@/lib/trades/date-input";
 import type { TradeDto, TradePayload, TradeSide } from "@/lib/trades/types";
 
 type TradeJournalProps = {
@@ -46,26 +50,6 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-function pad(value: number) {
-  return String(value).padStart(2, "0");
-}
-
-function toDatetimeLocalValue(iso: string | null | undefined) {
-  if (!iso) {
-    return "";
-  }
-
-  const date = new Date(iso);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function createEmptyForm(): TradeFormState {
   return {
     symbol: "",
@@ -73,7 +57,7 @@ function createEmptyForm(): TradeFormState {
     quantity: "",
     entry: "",
     exit: "",
-    openedAt: toDatetimeLocalValue(new Date().toISOString()),
+    openedAt: formatTradeDateInput(new Date().toISOString()),
     closedAt: "",
     notes: "",
   };
@@ -86,20 +70,10 @@ function tradeToForm(trade: TradeDto): TradeFormState {
     quantity: String(trade.quantity),
     entry: String(trade.entry),
     exit: trade.exit === null ? "" : String(trade.exit),
-    openedAt: toDatetimeLocalValue(trade.openedAt),
-    closedAt: toDatetimeLocalValue(trade.closedAt),
+    openedAt: formatTradeDateInput(trade.openedAt),
+    closedAt: formatTradeDateInput(trade.closedAt),
     notes: trade.notes ?? "",
   };
-}
-
-function toIsoFromDatetimeLocal(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toISOString();
 }
 
 function normalizeTrade(trade: TradeDto): TradeDto {
@@ -178,7 +152,7 @@ function buildPayload(
   const symbol = form.symbol.trim().toUpperCase();
   const entry = Number(form.entry);
   const quantity = Number(form.quantity);
-  const openedAt = toIsoFromDatetimeLocal(form.openedAt);
+  const openedAtResult = parseTradeDateInput(form.openedAt);
   const exitValue = form.exit.trim();
   const closedAtValue = form.closedAt.trim();
   const notes = form.notes.trim();
@@ -195,8 +169,8 @@ function buildPayload(
     return { payload: null, error: "Quantity must be a positive whole number." };
   }
 
-  if (!openedAt) {
-    return { payload: null, error: "Opened date is required." };
+  if (!openedAtResult.ok) {
+    return { payload: null, error: `Opened date: ${openedAtResult.error}` };
   }
 
   if (editingTrade && editingTrade.exit !== null && exitValue === "") {
@@ -218,7 +192,7 @@ function buildPayload(
     side: form.side,
     entry,
     quantity,
-    openedAt,
+    openedAt: openedAtResult.iso,
   };
 
   if (exitValue) {
@@ -232,20 +206,20 @@ function buildPayload(
   }
 
   if (closedAtValue) {
-    const closedAt = toIsoFromDatetimeLocal(closedAtValue);
+    const closedAtResult = parseTradeDateInput(closedAtValue);
 
-    if (!closedAt) {
-      return { payload: null, error: "Closed date is invalid." };
+    if (!closedAtResult.ok) {
+      return { payload: null, error: `Closed date: ${closedAtResult.error}` };
     }
 
-    if (new Date(closedAt) < new Date(openedAt)) {
+    if (new Date(closedAtResult.iso) < new Date(openedAtResult.iso)) {
       return {
         payload: null,
         error: "Closed date must be after the opened date.",
       };
     }
 
-    payload.closedAt = closedAt;
+    payload.closedAt = closedAtResult.iso;
   }
 
   if (notes || editingTrade?.notes) {
@@ -550,10 +524,14 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
               <input
                 value={form.openedAt}
                 onChange={(event) => updateForm("openedAt", event.target.value)}
-                className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                type="datetime-local"
+                className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                placeholder="2026-06-20 14:30"
+                type="text"
                 disabled={saving}
               />
+              <span className="text-xs font-normal text-zinc-500">
+                Use 24-hour time, for example 6/20 14:30 or 1430.
+              </span>
             </label>
 
             <label className="grid gap-1 text-sm font-medium text-zinc-700">
@@ -561,8 +539,9 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
               <input
                 value={form.closedAt}
                 onChange={(event) => updateForm("closedAt", event.target.value)}
-                className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                type="datetime-local"
+                className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                placeholder="2026-06-20 15:45"
+                type="text"
                 disabled={saving}
               />
             </label>
