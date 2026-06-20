@@ -7,6 +7,11 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
+/**
+ * Read one trade by id for the current user.
+ * Requires authentication and looks up by both id and session userId so users
+ * cannot access another user's trade; returns 404 when no owned trade exists.
+ */
 export async function GET(_request: Request, context: RouteContext) {
   const user = await requireUser();
 
@@ -29,6 +34,11 @@ export async function GET(_request: Request, context: RouteContext) {
   return NextResponse.json({ trade });
 }
 
+/**
+ * Update one trade by id for the current user.
+ * Requires authentication, accepts partial validated fields, verifies ownership
+ * inside a transaction, checks the final date range, and returns the refreshed trade.
+ */
 export async function PATCH(request: Request, context: RouteContext) {
   const user = await requireUser();
 
@@ -55,33 +65,94 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const existingTrade = await prisma.trade.findFirst({
+  const { openedAt, closedAt, ...tradeData } = result.data;
+  const updateResult = await prisma.$transaction(async (tx) => {
+    const existingTrade = await tx.trade.findFirst({
+      where: {
+        id,
+        userId: user.userId,
+      },
+    });
+
+    if (!existingTrade) {
+      return { status: "notFound" as const };
+    }
+
+    const nextOpenedAt = openedAt ? new Date(openedAt) : existingTrade.openedAt;
+    const nextClosedAt = closedAt ? new Date(closedAt) : existingTrade.closedAt;
+
+    if (nextClosedAt && nextClosedAt < nextOpenedAt) {
+      return { status: "invalidDateRange" as const };
+    }
+
+    const { count } = await tx.trade.updateMany({
+      where: {
+        id,
+        userId: user.userId,
+      },
+      data: {
+        ...tradeData,
+        ...(openedAt ? { openedAt: new Date(openedAt) } : {}),
+        ...(closedAt ? { closedAt: new Date(closedAt) } : {}),
+      },
+    });
+
+    if (count === 0) {
+      return { status: "notFound" as const };
+    }
+
+    const trade = await tx.trade.findFirst({
+      where: {
+        id,
+        userId: user.userId,
+      },
+    });
+
+    return trade
+      ? { status: "updated" as const, trade }
+      : { status: "notFound" as const };
+  });
+
+  if (updateResult.status === "notFound") {
+    return NextResponse.json({ error: "Trade not found" }, { status: 404 });
+  }
+
+  if (updateResult.status === "invalidDateRange") {
+    return NextResponse.json(
+      {
+        error: "Invalid trade input",
+        issues: [{ path: ["closedAt"], message: "closedAt must be after openedAt" }],
+      },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({ trade: updateResult.trade });
+}
+
+/**
+ * Delete one trade by id for the current user.
+ * Requires authentication and deletes with both id and session userId; returns
+ * 404 when no owned trade matches and 204 with no body after a successful delete.
+ */
+export async function DELETE(_request: Request, context: RouteContext) {
+  const user = await requireUser();
+
+  if (!user.ok) {
+    return unauthorizedResponse();
+  }
+
+  const { id } = await context.params;
+  const { count } = await prisma.trade.deleteMany({
     where: {
       id,
       userId: user.userId,
     },
   });
 
-  if (!existingTrade) {
+  if (count === 0) {
     return NextResponse.json({ error: "Trade not found" }, { status: 404 });
   }
 
-  const trade = await prisma.trade.update({
-    where: { id },
-    data: {
-      ...result.data,
-      openedAt: result.data.openedAt ? new Date(result.data.openedAt) : undefined,
-      closedAt: result.data.closedAt ? new Date(result.data.closedAt) : undefined,
-    },
-  });
-
-  return NextResponse.json({ trade });
-}
-
-export async function DELETE(_request: Request, context: RouteContext) {
-  const { id } = await context.params;
-  return NextResponse.json(
-    { error: "Not implemented", route: `DELETE /api/trades/${id}` },
-    { status: 501 }
-  );
+  return new Response(null, { status: 204 });
 }

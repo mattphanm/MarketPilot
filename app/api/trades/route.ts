@@ -3,6 +3,11 @@ import { requireUser, unauthorizedResponse } from "@/lib/auth/require-user";
 import { prisma } from "@/lib/prisma";
 import { TradeSchema } from "@/lib/validations/trade";
 
+/**
+ * Read the current user's trade history.
+ * Requires authentication, scopes the query by session userId, and returns trades
+ * newest first by openedAt with createdAt as a stable secondary sort.
+ */
 export async function GET() {
   const user = await requireUser();
 
@@ -10,9 +15,19 @@ export async function GET() {
     return unauthorizedResponse();
   }
 
-  return NextResponse.json({ userId: user.userId });
+  const trades = await prisma.trade.findMany({
+    where: { userId: user.userId },
+    orderBy: [{ openedAt: "desc" }, { createdAt: "desc" }],
+  });
+
+  return NextResponse.json({ trades });
 }
 
+/**
+ * Create a trade for the current user.
+ * Requires authentication, validates the JSON body, normalizes date strings into
+ * Date values, assigns ownership from the session, and returns the created trade.
+ */
 export async function POST(request: Request) {
   const user = await requireUser();
 
@@ -23,7 +38,7 @@ export async function POST(request: Request) {
   let body: unknown;
 
   try {
-    body = await request.json(); 
+    body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -37,11 +52,12 @@ export async function POST(request: Request) {
     );
   }
 
+  const { openedAt, closedAt, ...tradeData } = result.data;
   const trade = await prisma.trade.create({
     data: {
-      ...result.data,
-      openedAt: new Date(result.data.openedAt),
-      closedAt: result.data.closedAt ? new Date(result.data.closedAt) : undefined,
+      ...tradeData,
+      openedAt: new Date(openedAt),
+      ...(closedAt ? { closedAt: new Date(closedAt) } : {}),
       userId: user.userId,
     },
   });
