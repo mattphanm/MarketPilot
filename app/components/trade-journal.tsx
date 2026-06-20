@@ -5,6 +5,17 @@ import {
   formatTradeDateInput,
   parseTradeDateInput,
 } from "@/lib/trades/date-input";
+import {
+  addUtcMonths,
+  buildCalendarMonth,
+  createAnalyticsReport,
+  getLatestTradeMonth,
+  getTradePnl,
+  startOfUtcMonth,
+  type AnalyticsRangeKey,
+  type AnalyticsReport,
+  type EquityPoint,
+} from "@/lib/analytics/report";
 import type { TradeDto, TradePayload, TradeSide } from "@/lib/trades/types";
 
 type TradeJournalProps = {
@@ -41,6 +52,15 @@ const moneyFormatter = new Intl.NumberFormat("en-US", {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
+const percentFormatter = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+const ratioFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+});
+
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -49,6 +69,13 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
   timeZone: "UTC",
 });
+
+const rangeOptions: Array<{ key: AnalyticsRangeKey; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "30d", label: "30D" },
+  { key: "90d", label: "90D" },
+  { key: "ytd", label: "YTD" },
+];
 
 function createEmptyForm(): TradeFormState {
   return {
@@ -99,17 +126,20 @@ function sortTrades(trades: TradeDto[]) {
   });
 }
 
-function getTradePnl(trade: TradeDto) {
-  if (trade.exit === null) {
-    return null;
-  }
-
-  const direction = trade.side === "buy" ? 1 : -1;
-  return (trade.exit - trade.entry) * trade.quantity * direction;
-}
-
 function formatMoney(value: number) {
   return moneyFormatter.format(value);
+}
+
+function formatOptionalMoney(value: number | null) {
+  return value === null ? "-" : formatMoney(value);
+}
+
+function formatPercent(value: number | null) {
+  return value === null ? "-" : percentFormatter.format(value);
+}
+
+function formatRatio(value: number | null) {
+  return value === null ? "-" : ratioFormatter.format(value);
 }
 
 function formatDate(iso: string | null) {
@@ -118,6 +148,120 @@ function formatDate(iso: string | null) {
   }
 
   return `${dateFormatter.format(new Date(iso))} UTC`;
+}
+
+function getMoneyTone(value: number | null) {
+  if (value === null || value === 0) {
+    return "neutral";
+  }
+
+  return value > 0 ? "profit" : "loss";
+}
+
+function getMetricValueClass(tone: "neutral" | "profit" | "loss") {
+  if (tone === "profit") {
+    return "text-emerald-700";
+  }
+
+  if (tone === "loss") {
+    return "text-red-700";
+  }
+
+  return "text-zinc-950";
+}
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function buildScoreMetrics(report: AnalyticsReport) {
+  const winRateScore = clampScore((report.winRate ?? 0) * 100);
+  const profitFactorScore = clampScore(((report.profitFactor ?? 0) / 2) * 100);
+  const payoffScore = clampScore(((report.averageWinLoss ?? 0) / 2) * 100);
+  const expectancyBase = Math.max(
+    Math.abs(report.averageWin),
+    Math.abs(report.averageLoss),
+    1
+  );
+  const expectancyScore = clampScore(
+    report.expectancy > 0 ? (report.expectancy / expectancyBase) * 100 : 0
+  );
+  const consistencyScore = clampScore(
+    report.activeDays > 0 ? (report.winningDays / report.activeDays) * 100 : 0
+  );
+  const metrics = [
+    { label: "Win rate", value: winRateScore },
+    { label: "Profit factor", value: profitFactorScore },
+    { label: "Payoff", value: payoffScore },
+    { label: "Expectancy", value: expectancyScore },
+    { label: "Consistency", value: consistencyScore },
+  ];
+
+  return {
+    score:
+      metrics.reduce((total, metric) => total + metric.value, 0) /
+      metrics.length,
+    metrics,
+  };
+}
+
+function getRadarPoints(metrics: Array<{ value: number }>) {
+  return metrics
+    .map((metric, index) => {
+      const angle = -Math.PI / 2 + (index / metrics.length) * Math.PI * 2;
+      const radius = (clampScore(metric.value) / 100) * 42;
+
+      return `${50 + Math.cos(angle) * radius},${50 + Math.sin(angle) * radius}`;
+    })
+    .join(" ");
+}
+
+function getEquityChart(points: EquityPoint[]) {
+  const width = 640;
+  const height = 220;
+  const padding = 18;
+
+  if (points.length === 0) {
+    return { width, height, linePoints: "", zeroY: height / 2 };
+  }
+
+  const values = points.map((point) => point.cumulativePnl);
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const span = max - min || 1;
+  const xStep =
+    points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
+  const yFor = (value: number) =>
+    height - padding - ((value - min) / span) * (height - padding * 2);
+  const linePoints = points
+    .map((point, index) => `${padding + index * xStep},${yFor(point.cumulativePnl)}`)
+    .join(" ");
+
+  return { width, height, linePoints, zeroY: yFor(0) };
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "neutral" | "profit" | "loss";
+}) {
+  return (
+    <div className="border border-zinc-200 bg-white p-4">
+      <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+        {label}
+      </p>
+      <p className={`mt-2 text-2xl font-semibold ${getMetricValueClass(tone)}`}>
+        {value}
+      </p>
+      <p className="mt-2 min-h-5 text-sm text-zinc-500">{detail}</p>
+    </div>
+  );
 }
 
 function formatIssue(issue: ApiIssue) {
@@ -233,32 +377,40 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
   const [trades, setTrades] = useState(() =>
     sortTrades(initialTrades.map(normalizeTrade))
   );
+  const [analyticsRange, setAnalyticsRange] =
+    useState<AnalyticsRangeKey>("all");
+  const [calendarMonth, setCalendarMonth] = useState(() =>
+    getLatestTradeMonth(initialTrades.map(normalizeTrade))
+  );
   const [form, setForm] = useState<TradeFormState>(() => createEmptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const currentDate = useMemo(() => new Date(), []);
 
   const editingTrade = useMemo(
     () => trades.find((trade) => trade.id === editingId) ?? null,
     [editingId, trades]
   );
 
-  const summary = useMemo(() => {
-    const pnlValues = trades
-      .map((trade) => getTradePnl(trade))
-      .filter((value): value is number => value !== null);
-    const realizedPnl = pnlValues.reduce((total, value) => total + value, 0);
-
-    return {
-      total: trades.length,
-      closed: trades.filter(
-        (trade) => trade.closedAt !== null || trade.exit !== null
-      ).length,
-      wins: pnlValues.filter((value) => value > 0).length,
-      realizedPnl,
-    };
-  }, [trades]);
+  const analyticsReport = useMemo(
+    () => createAnalyticsReport(trades, { range: analyticsRange, now: currentDate }),
+    [analyticsRange, currentDate, trades]
+  );
+  const calendar = useMemo(
+    () => buildCalendarMonth(trades, calendarMonth),
+    [calendarMonth, trades]
+  );
+  const score = useMemo(
+    () => buildScoreMetrics(analyticsReport),
+    [analyticsReport]
+  );
+  const equityChart = useMemo(
+    () => getEquityChart(analyticsReport.equityCurve),
+    [analyticsReport.equityCurve]
+  );
+  const radarPoints = useMemo(() => getRadarPoints(score.metrics), [score.metrics]);
 
   function updateForm<Key extends keyof TradeFormState>(
     key: Key,
@@ -371,42 +523,351 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="border border-zinc-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-            Trades
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-zinc-950">
-            {numberFormatter.format(summary.total)}
-          </p>
+      <section>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+              Reports
+            </p>
+            <h2 className="mt-1 text-xl font-semibold tracking-normal text-zinc-950">
+              User analytics
+            </h2>
+          </div>
+
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            {rangeOptions.map((option) => {
+              const selected = analyticsRange === option.key;
+
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setAnalyticsRange(option.key)}
+                  className={`h-9 min-w-16 border px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-600 ${
+                    selected
+                      ? "border-zinc-950 bg-zinc-950 text-white"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+                  }`}
+                  aria-pressed={selected}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="border border-zinc-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-            Closed
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-zinc-950">
-            {numberFormatter.format(summary.closed)}
-          </p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <MetricCard
+            label="Net P&L"
+            value={formatMoney(analyticsReport.netPnl)}
+            detail={`${numberFormatter.format(
+              analyticsReport.closedTrades
+            )} closed / ${numberFormatter.format(analyticsReport.openTrades)} open`}
+            tone={getMoneyTone(analyticsReport.netPnl)}
+          />
+          <MetricCard
+            label="Win rate"
+            value={formatPercent(analyticsReport.winRate)}
+            detail={`${numberFormatter.format(
+              analyticsReport.winningTrades
+            )} wins, ${numberFormatter.format(analyticsReport.losingTrades)} losses`}
+          />
+          <MetricCard
+            label="Profit factor"
+            value={formatRatio(analyticsReport.profitFactor)}
+            detail={`${formatMoney(analyticsReport.grossProfit)} gross win`}
+          />
+          <MetricCard
+            label="Avg win/loss"
+            value={formatRatio(analyticsReport.averageWinLoss)}
+            detail={`${formatMoney(analyticsReport.averageWin)} / ${formatMoney(
+              Math.abs(analyticsReport.averageLoss)
+            )}`}
+          />
+          <MetricCard
+            label="Expectancy"
+            value={formatMoney(analyticsReport.expectancy)}
+            detail="Per closed trade"
+            tone={getMoneyTone(analyticsReport.expectancy)}
+          />
         </div>
-        <div className="border border-zinc-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-            Wins
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-zinc-950">
-            {numberFormatter.format(summary.wins)}
-          </p>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
+          <section className="border border-zinc-200 bg-white p-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-zinc-950">
+                  Daily net cumulative P&amp;L
+                </h3>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {numberFormatter.format(analyticsReport.activeDays)} active days
+                </p>
+              </div>
+              <p
+                className={`text-sm font-semibold ${getMetricValueClass(
+                  getMoneyTone(analyticsReport.netPnl)
+                )}`}
+              >
+                {formatMoney(analyticsReport.netPnl)}
+              </p>
+            </div>
+
+            <div className="mt-4 h-64 overflow-hidden border border-zinc-100 bg-zinc-50">
+              {analyticsReport.equityCurve.length === 0 ? (
+                <div className="flex h-full items-center justify-center px-4 text-center text-sm text-zinc-500">
+                  No closed trades in this period.
+                </div>
+              ) : (
+                <svg
+                  viewBox={`0 0 ${equityChart.width} ${equityChart.height}`}
+                  className="h-full w-full"
+                  role="img"
+                  aria-label="Daily cumulative P&L chart"
+                >
+                  <line
+                    x1="0"
+                    x2={equityChart.width}
+                    y1={equityChart.zeroY}
+                    y2={equityChart.zeroY}
+                    stroke="#d4d4d8"
+                    strokeWidth="1"
+                  />
+                  <polyline
+                    points={equityChart.linePoints}
+                    fill="none"
+                    stroke={analyticsReport.netPnl >= 0 ? "#047857" : "#b91c1c"}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="4"
+                  />
+                </svg>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="border border-zinc-100 bg-zinc-50 p-3">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">
+                  Best day
+                </p>
+                <p className="mt-2 text-sm font-semibold text-emerald-700">
+                  {formatOptionalMoney(analyticsReport.bestDayPnl)}
+                </p>
+              </div>
+              <div className="border border-zinc-100 bg-zinc-50 p-3">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">
+                  Worst day
+                </p>
+                <p className="mt-2 text-sm font-semibold text-red-700">
+                  {formatOptionalMoney(analyticsReport.worstDayPnl)}
+                </p>
+              </div>
+              <div className="border border-zinc-100 bg-zinc-50 p-3">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">
+                  Symbols
+                </p>
+                <p className="mt-2 text-sm font-semibold text-zinc-950">
+                  {numberFormatter.format(analyticsReport.symbolsTraded)}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="border border-zinc-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-zinc-950">
+                  MarketPilot score
+                </h3>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {numberFormatter.format(analyticsReport.closedTrades)} closed trades
+                </p>
+              </div>
+              <p className="text-2xl font-semibold text-zinc-950">
+                {ratioFormatter.format(score.score)}
+              </p>
+            </div>
+
+            <div className="mt-4 flex justify-center">
+              <svg
+                viewBox="0 0 100 100"
+                className="h-48 w-48"
+                role="img"
+                aria-label="MarketPilot score radar"
+              >
+                <polygon
+                  points="50,8 89.9,37 74.7,84 25.3,84 10.1,37"
+                  fill="#f4f4f5"
+                  stroke="#d4d4d8"
+                  strokeWidth="0.8"
+                />
+                <polygon
+                  points="50,22 76.6,41.3 66.5,72.7 33.5,72.7 23.4,41.3"
+                  fill="none"
+                  stroke="#d4d4d8"
+                  strokeWidth="0.8"
+                />
+                <polygon
+                  points={radarPoints}
+                  fill="rgba(16, 185, 129, 0.22)"
+                  stroke="#047857"
+                  strokeWidth="1.6"
+                />
+              </svg>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              {score.metrics.map((metric) => (
+                <div key={metric.label}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs text-zinc-500">
+                    <span>{metric.label}</span>
+                    <span>{ratioFormatter.format(metric.value)}</span>
+                  </div>
+                  <div className="h-2 bg-zinc-100">
+                    <div
+                      className="h-2 bg-emerald-600"
+                      style={{ width: `${clampScore(metric.value)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-        <div className="border border-zinc-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-            Realized P&amp;L
-          </p>
-          <p
-            className={`mt-2 text-2xl font-semibold ${
-              summary.realizedPnl >= 0 ? "text-emerald-700" : "text-red-700"
-            }`}
-          >
-            {formatMoney(summary.realizedPnl)}
-          </p>
+      </section>
+
+      <section className="mt-5 border border-zinc-200 bg-white">
+        <div className="flex flex-col gap-3 border-b border-zinc-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-950">Calendar</h2>
+            <p className="mt-1 text-sm text-zinc-500">{calendar.monthLabel}</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setCalendarMonth((current) => addUtcMonths(current, -1))
+              }
+              className="h-9 border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarMonth(startOfUtcMonth(currentDate))}
+              className="h-9 border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setCalendarMonth((current) => addUtcMonths(current, 1))
+              }
+              className="h-9 border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto p-4">
+          <div className="grid min-w-[920px] grid-cols-[repeat(7,minmax(112px,1fr))_112px] gap-1">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+              <div
+                key={day}
+                className="border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500"
+              >
+                {day}
+              </div>
+            ))}
+            <div className="border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500">
+              Week
+            </div>
+
+            {calendar.weeks.map((week, weekIndex) => (
+              <div key={`week-${weekIndex}`} className="contents">
+                {week.days.map((day) => {
+                  const dayTone =
+                    day.pnl > 0 && day.isCurrentMonth
+                      ? "border-emerald-200 bg-emerald-50"
+                      : day.pnl < 0 && day.isCurrentMonth
+                        ? "border-red-200 bg-red-50"
+                        : day.isCurrentMonth
+                          ? "border-zinc-200 bg-white"
+                          : "border-zinc-100 bg-zinc-50 text-zinc-400";
+
+                  return (
+                    <div
+                      key={day.dateKey}
+                      className={`flex min-h-28 flex-col border p-3 ${dayTone}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-sm font-medium">
+                          {day.dayNumber}
+                        </span>
+                        {day.closedTrades > 0 ? (
+                          <span className="text-xs text-zinc-500">
+                            {formatPercent(day.winRate)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {day.trades > 0 ? (
+                        <div className="mt-auto pt-3">
+                          <p
+                            className={`text-sm font-semibold ${getMetricValueClass(
+                              getMoneyTone(day.pnl)
+                            )}`}
+                          >
+                            {formatMoney(day.pnl)}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {numberFormatter.format(day.trades)}{" "}
+                            {day.trades === 1 ? "trade" : "trades"}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+                <div
+                  className={`flex min-h-28 flex-col justify-between border p-3 ${
+                    week.summary.pnl > 0
+                      ? "border-emerald-200 bg-emerald-50"
+                      : week.summary.pnl < 0
+                        ? "border-red-200 bg-red-50"
+                        : "border-zinc-200 bg-zinc-50"
+                  }`}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500">
+                    Week {weekIndex + 1}
+                  </p>
+                  {week.summary.activeDays > 0 ? (
+                    <div>
+                      <p
+                        className={`text-sm font-semibold ${getMetricValueClass(
+                          getMoneyTone(week.summary.pnl)
+                        )}`}
+                      >
+                        {formatMoney(week.summary.pnl)}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {numberFormatter.format(week.summary.trades)} trades
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {numberFormatter.format(week.summary.activeDays)} active days
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-400">No activity</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

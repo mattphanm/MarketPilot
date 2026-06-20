@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  buildCalendarMonth,
+  createAnalyticsReport,
+  type AnalyticsTrade,
+} from "../lib/analytics/report";
 
 type TestPath = "happy" | "edge" | "failure";
 
@@ -59,5 +64,109 @@ describe("analytics test case inventory", () => {
     expect(
       failureCases.every((testCase) => /reject|401|scoped|userId/i.test(testCase.expectation))
     ).toBe(true);
+  });
+});
+
+const analyticsTrades: AnalyticsTrade[] = [
+  {
+    id: "aapl-win",
+    symbol: "AAPL",
+    side: "buy",
+    entry: 100,
+    exit: 110,
+    quantity: 10,
+    openedAt: "2026-06-03T14:00:00.000Z",
+    closedAt: "2026-06-03T15:00:00.000Z",
+  },
+  {
+    id: "msft-loss",
+    symbol: "MSFT",
+    side: "buy",
+    entry: 50,
+    exit: 45,
+    quantity: 4,
+    openedAt: "2026-06-04T14:00:00.000Z",
+    closedAt: "2026-06-04T15:00:00.000Z",
+  },
+  {
+    id: "tsla-short-win",
+    symbol: "TSLA",
+    side: "sell",
+    entry: 200,
+    exit: 190,
+    quantity: 2,
+    openedAt: "2026-06-10T14:00:00.000Z",
+    closedAt: "2026-06-10T15:00:00.000Z",
+  },
+  {
+    id: "nvda-open",
+    symbol: "NVDA",
+    side: "buy",
+    entry: 120,
+    exit: null,
+    quantity: 3,
+    openedAt: "2026-06-11T14:00:00.000Z",
+    closedAt: null,
+  },
+  {
+    id: "spy-old-win",
+    symbol: "SPY",
+    side: "buy",
+    entry: 100,
+    exit: 120,
+    quantity: 1,
+    openedAt: "2026-01-02T14:00:00.000Z",
+    closedAt: "2026-01-02T15:00:00.000Z",
+  },
+];
+
+describe("analytics report calculations", () => {
+  it("calculates realized performance without counting open trade P&L", () => {
+    const report = createAnalyticsReport(analyticsTrades, {
+      now: new Date("2026-06-20T12:00:00.000Z"),
+    });
+
+    expect(report.totalTrades).toBe(5);
+    expect(report.closedTrades).toBe(4);
+    expect(report.openTrades).toBe(1);
+    expect(report.netPnl).toBe(120);
+    expect(report.grossProfit).toBe(140);
+    expect(report.grossLoss).toBe(-20);
+    expect(report.winRate).toBe(0.75);
+    expect(report.profitFactor).toBe(7);
+    expect(report.expectancy).toBe(30);
+  });
+
+  it("respects supported relative date ranges", () => {
+    const report = createAnalyticsReport(analyticsTrades, {
+      range: "30d",
+      now: new Date("2026-06-20T12:00:00.000Z"),
+    });
+
+    expect(report.totalTrades).toBe(4);
+    expect(report.closedTrades).toBe(3);
+    expect(report.netPnl).toBe(100);
+    expect(report.daily.map((day) => day.dateKey)).toEqual([
+      "2026-06-03",
+      "2026-06-04",
+      "2026-06-10",
+      "2026-06-11",
+    ]);
+  });
+
+  it("builds a month calendar with daily cells and weekly summaries", () => {
+    const calendar = buildCalendarMonth(
+      analyticsTrades,
+      new Date("2026-06-01T00:00:00.000Z")
+    );
+    const firstWeek = calendar.weeks[0].summary;
+    const secondWeek = calendar.weeks[1].summary;
+
+    expect(calendar.monthLabel).toBe("June 2026");
+    expect(calendar.weeks).toHaveLength(6);
+    expect(firstWeek.pnl).toBe(80);
+    expect(firstWeek.trades).toBe(2);
+    expect(secondWeek.pnl).toBe(20);
+    expect(secondWeek.trades).toBe(2);
   });
 });
