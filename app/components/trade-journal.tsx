@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import { signOutUser } from "@/app/actions/auth";
 import {
   formatTradeDateInput,
   parseTradeDateInput,
@@ -20,7 +21,18 @@ import type { TradeDto, TradePayload, TradeSide } from "@/lib/trades/types";
 
 type TradeJournalProps = {
   initialTrades: TradeDto[];
+  userName?: string | null;
+  userEmail?: string | null;
+  nowIso: string;
 };
+
+type DashboardView =
+  | "dashboard"
+  | "trades"
+  | "monitor"
+  | "calendar"
+  | "analytics"
+  | "journal";
 
 type TradeFormState = {
   symbol: string;
@@ -43,6 +55,8 @@ type ApiTradeBody = {
   error?: string;
   issues?: ApiIssue[];
 };
+
+type MoneyTone = "neutral" | "profit" | "loss";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -70,6 +84,48 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
+const shortDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+const navItems: Array<{ id: DashboardView; label: string; mark: string }> = [
+  { id: "dashboard", label: "Dashboard", mark: "D" },
+  { id: "trades", label: "Trade Log", mark: "T" },
+  { id: "monitor", label: "Open Monitor", mark: "O" },
+  { id: "calendar", label: "Calendar", mark: "C" },
+  { id: "analytics", label: "Analytics", mark: "A" },
+  { id: "journal", label: "Journal", mark: "J" },
+];
+
+const viewMeta: Record<DashboardView, { title: string; subtitle: string }> = {
+  dashboard: {
+    title: "Dashboard",
+    subtitle: "Trade performance from your logged executions",
+  },
+  trades: {
+    title: "Trade Log",
+    subtitle: "Full transaction history and review notes",
+  },
+  monitor: {
+    title: "Open Monitor",
+    subtitle: "Open trades that still need an exit",
+  },
+  calendar: {
+    title: "Calendar",
+    subtitle: "Daily and weekly realized P&L",
+  },
+  analytics: {
+    title: "Analytics",
+    subtitle: "Performance, behavior, and consistency metrics",
+  },
+  journal: {
+    title: "Journal",
+    subtitle: "Create trades and capture review notes",
+  },
+};
+
 const rangeOptions: Array<{ key: AnalyticsRangeKey; label: string }> = [
   { key: "all", label: "All" },
   { key: "30d", label: "30D" },
@@ -77,14 +133,16 @@ const rangeOptions: Array<{ key: AnalyticsRangeKey; label: string }> = [
   { key: "ytd", label: "YTD" },
 ];
 
-function createEmptyForm(): TradeFormState {
+const allocationColors = ["#6C5DD3", "#16A779", "#3B82F6", "#D99A20", "#E25555"];
+
+function createEmptyForm(nowIso: string): TradeFormState {
   return {
     symbol: "",
     side: "buy",
     quantity: "",
     entry: "",
     exit: "",
-    openedAt: formatTradeDateInput(new Date().toISOString()),
+    openedAt: formatTradeDateInput(nowIso),
     closedAt: "",
     notes: "",
   };
@@ -130,6 +188,27 @@ function formatMoney(value: number) {
   return moneyFormatter.format(value);
 }
 
+function formatCompactMoney(value: number) {
+  const sign = value < 0 ? "-" : "";
+  const absoluteValue = Math.abs(value);
+
+  if (absoluteValue >= 1_000_000) {
+    return `${sign}$${formatCompactUnit(absoluteValue / 1_000_000)}M`;
+  }
+
+  if (absoluteValue >= 1_000) {
+    return `${sign}$${formatCompactUnit(absoluteValue / 1_000)}K`;
+  }
+
+  return `${sign}${moneyFormatter.format(absoluteValue)}`;
+}
+
+function formatCompactUnit(value: number) {
+  const fixedValue = value >= 10 ? value.toFixed(0) : value.toFixed(1);
+
+  return fixedValue.replace(/\.0$/, "");
+}
+
 function formatOptionalMoney(value: number | null) {
   return value === null ? "-" : formatMoney(value);
 }
@@ -150,7 +229,31 @@ function formatDate(iso: string | null) {
   return `${dateFormatter.format(new Date(iso))} UTC`;
 }
 
-function getMoneyTone(value: number | null) {
+function formatShortDate(iso: string | null) {
+  if (!iso) {
+    return "Open";
+  }
+
+  return shortDateFormatter.format(new Date(iso));
+}
+
+function getInitials(name: string) {
+  const parts = name
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "MP";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function getMoneyTone(value: number | null): MoneyTone {
   if (value === null || value === 0) {
     return "neutral";
   }
@@ -158,16 +261,76 @@ function getMoneyTone(value: number | null) {
   return value > 0 ? "profit" : "loss";
 }
 
-function getMetricValueClass(tone: "neutral" | "profit" | "loss") {
+function getMetricValueClass(tone: MoneyTone) {
   if (tone === "profit") {
-    return "text-emerald-700";
+    return "text-[#16A779]";
   }
 
   if (tone === "loss") {
-    return "text-red-700";
+    return "text-[#E25555]";
   }
 
-  return "text-zinc-950";
+  return "text-[#171923]";
+}
+
+function getStatusBadgeClass(trade: TradeDto) {
+  const pnl = getTradePnl(trade);
+
+  if (pnl === null) {
+    return "bg-blue-50 text-blue-700";
+  }
+
+  if (pnl > 0) {
+    return "bg-emerald-50 text-[#16A779]";
+  }
+
+  if (pnl < 0) {
+    return "bg-red-50 text-[#E25555]";
+  }
+
+  return "bg-amber-50 text-[#D99A20]";
+}
+
+function getTradeStatusLabel(trade: TradeDto) {
+  const pnl = getTradePnl(trade);
+
+  if (pnl === null) {
+    return "OPEN";
+  }
+
+  if (pnl > 0) {
+    return "WIN";
+  }
+
+  if (pnl < 0) {
+    return "LOSS";
+  }
+
+  return "FLAT";
+}
+
+function getDirectionLabel(side: TradeSide) {
+  return side === "buy" ? "Long" : "Short";
+}
+
+function getTradeNotional(trade: TradeDto) {
+  return trade.entry * trade.quantity;
+}
+
+function getTradeReturnPct(trade: TradeDto) {
+  if (trade.exit === null) {
+    return null;
+  }
+
+  const direction = trade.side === "buy" ? 1 : -1;
+  return ((trade.exit - trade.entry) / trade.entry) * direction;
+}
+
+function getOpenTradeAgeDays(trade: TradeDto, now: Date) {
+  const openedAt = new Date(trade.openedAt);
+  const elapsed = now.getTime() - openedAt.getTime();
+
+  return Math.max(0, Math.floor(elapsed / (24 * 60 * 60 * 1000)));
 }
 
 function clampScore(value: number) {
@@ -234,34 +397,35 @@ function getEquityChart(points: EquityPoint[]) {
   const yFor = (value: number) =>
     height - padding - ((value - min) / span) * (height - padding * 2);
   const linePoints = points
-    .map((point, index) => `${padding + index * xStep},${yFor(point.cumulativePnl)}`)
+    .map(
+      (point, index) =>
+        `${padding + index * xStep},${yFor(point.cumulativePnl)}`
+    )
     .join(" ");
 
   return { width, height, linePoints, zeroY: yFor(0) };
 }
 
-function MetricCard({
-  label,
-  value,
-  detail,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  tone?: "neutral" | "profit" | "loss";
-}) {
-  return (
-    <div className="border border-zinc-200 bg-white p-4">
-      <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-        {label}
-      </p>
-      <p className={`mt-2 text-2xl font-semibold ${getMetricValueClass(tone)}`}>
-        {value}
-      </p>
-      <p className="mt-2 min-h-5 text-sm text-zinc-500">{detail}</p>
-    </div>
-  );
+function buildSymbolAllocation(trades: TradeDto[]) {
+  const openTrades = trades.filter((trade) => trade.exit === null);
+  const source = openTrades.length > 0 ? openTrades : trades;
+  const totals = new Map<string, number>();
+
+  for (const trade of source) {
+    totals.set(trade.symbol, (totals.get(trade.symbol) ?? 0) + getTradeNotional(trade));
+  }
+
+  const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
+
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([symbol, value], index) => ({
+      symbol,
+      value,
+      percent: total > 0 ? value / total : 0,
+      color: allocationColors[index % allocationColors.length],
+    }));
 }
 
 function formatIssue(issue: ApiIssue) {
@@ -373,25 +537,1668 @@ function buildPayload(
   return { payload, error: null };
 }
 
-export default function TradeJournal({ initialTrades }: TradeJournalProps) {
+function MetricCard({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "neutral" | "profit" | "loss";
+}) {
+  return (
+    <div className="rounded-lg border border-[#E6E8EF] bg-white p-4 shadow-[0_1px_0_rgba(17,24,39,0.03)]">
+      <p className="text-[11px] font-medium text-[#697386]">{label}</p>
+      <p
+        className={`mt-2 truncate text-[22px] font-bold leading-none ${getMetricValueClass(
+          tone
+        )}`}
+      >
+        {value}
+      </p>
+      <p className="mt-2 min-h-5 truncate text-[11px] text-[#697386]">
+        {detail}
+      </p>
+    </div>
+  );
+}
+
+function StatusPill({ trade }: { trade: TradeDto }) {
+  return (
+    <span
+      className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-semibold ${getStatusBadgeClass(
+        trade
+      )}`}
+    >
+      {getTradeStatusLabel(trade)}
+    </span>
+  );
+}
+
+function DirectionPill({ side }: { side: TradeSide }) {
+  const isLong = side === "buy";
+
+  return (
+    <span
+      className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium ${
+        isLong ? "bg-emerald-50 text-[#16A779]" : "bg-red-50 text-[#E25555]"
+      }`}
+    >
+      {getDirectionLabel(side)}
+    </span>
+  );
+}
+
+function EmptyState({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-[#D8DCE7] bg-white px-4 text-center">
+      <div>
+        <p className="text-sm font-semibold text-[#171923]">{title}</p>
+        <p className="mt-1 max-w-sm text-xs leading-5 text-[#697386]">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({
+  activeView,
+  userName,
+  userEmail,
+  onAddTrade,
+  onNav,
+}: {
+  activeView: DashboardView;
+  userName: string;
+  userEmail?: string | null;
+  onAddTrade: () => void;
+  onNav: (view: DashboardView) => void;
+}) {
+  return (
+    <aside className="hidden min-h-screen w-[220px] shrink-0 flex-col border-r border-white/10 bg-[#1E1B2E] lg:flex">
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#6C5DD3] text-[11px] font-bold text-white">
+          MP
+        </div>
+        <span className="text-[15px] font-bold tracking-normal text-white">
+          MarketPilot
+        </span>
+      </div>
+
+      <div className="mx-3 mb-4 rounded-lg bg-white/5 px-3 py-2">
+        <p className="truncate text-[12px] font-medium text-white">Main Portfolio</p>
+        <p className="mt-0.5 truncate text-[11px] text-[#A8A5C1]">
+          Private workspace
+        </p>
+      </div>
+
+      <div className="px-3 pb-5">
+        <button
+          type="button"
+          onClick={onAddTrade}
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#6C5DD3] px-3 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7] focus:outline-none focus:ring-2 focus:ring-white/60"
+        >
+          <span className="text-sm leading-none">+</span>
+          Add Trade
+        </button>
+      </div>
+
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2">
+        {navItems.map((item) => {
+          const selected = item.id === activeView;
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onNav(item.id)}
+              className={`flex h-9 w-full items-center gap-2.5 rounded-lg border-l-2 px-3 text-left text-[13px] transition ${
+                selected
+                  ? "border-[#6C5DD3] bg-[#6C5DD3]/20 font-medium text-white"
+                  : "border-transparent text-[#A8A5C1] hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded text-[10px] ${
+                  selected ? "bg-[#6C5DD3] text-white" : "bg-white/5 text-[#A8A5C1]"
+                }`}
+              >
+                {item.mark}
+              </span>
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="p-3">
+        <div className="flex items-center gap-2.5 rounded-lg bg-white/5 px-3 py-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[11px] font-bold text-white">
+            {getInitials(userName)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[12px] font-medium text-white">{userName}</p>
+            <p className="truncate text-[11px] text-[#A8A5C1]">{userEmail}</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function MobileNav({
+  activeView,
+  onNav,
+}: {
+  activeView: DashboardView;
+  onNav: (view: DashboardView) => void;
+}) {
+  return (
+    <nav className="flex gap-2 overflow-x-auto border-b border-[#E6E8EF] bg-white px-4 py-2 lg:hidden">
+      {navItems.map((item) => {
+        const selected = activeView === item.id;
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onNav(item.id)}
+            className={`h-8 shrink-0 rounded-md border px-3 text-[12px] font-medium ${
+              selected
+                ? "border-[#6C5DD3] bg-[#6C5DD3] text-white"
+                : "border-[#E6E8EF] bg-white text-[#697386]"
+            }`}
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function TopBar({
+  title,
+  subtitle,
+  userName,
+  analyticsRange,
+  onRangeChange,
+}: {
+  title: string;
+  subtitle: string;
+  userName: string;
+  analyticsRange: AnalyticsRangeKey;
+  onRangeChange: (range: AnalyticsRangeKey) => void;
+}) {
+  return (
+    <header className="flex min-h-[58px] shrink-0 flex-col gap-3 border-b border-[#E6E8EF] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-5">
+      <div className="min-w-0">
+        <h1 className="truncate text-[16px] font-semibold leading-tight text-[#171923]">
+          {title}
+        </h1>
+        <p className="mt-0.5 truncate text-[11px] text-[#697386]">{subtitle}</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-0.5">
+          {rangeOptions.map((option) => {
+            const selected = analyticsRange === option.key;
+
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => onRangeChange(option.key)}
+                className={`h-7 min-w-10 rounded-md px-2 text-[11px] font-semibold transition ${
+                  selected
+                    ? "bg-white text-[#6C5DD3] shadow-sm"
+                    : "text-[#697386] hover:text-[#171923]"
+                }`}
+                aria-pressed={selected}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <form action={signOutUser}>
+          <button
+            type="submit"
+            className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+          >
+            Sign out
+          </button>
+        </form>
+
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#6C5DD3] text-[11px] font-bold text-white">
+          {getInitials(userName)}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function EquityChart({
+  report,
+  chart,
+}: {
+  report: AnalyticsReport;
+  chart: ReturnType<typeof getEquityChart>;
+}) {
+  return (
+    <div className="h-[220px] overflow-hidden rounded-lg border border-[#EEF0F5] bg-[#F7F8FA]">
+      {report.equityCurve.length === 0 ? (
+        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-[#697386]">
+          No closed trades in this period.
+        </div>
+      ) : (
+        <svg
+          viewBox={`0 0 ${chart.width} ${chart.height}`}
+          className="h-full w-full"
+          role="img"
+          aria-label="Daily cumulative P&L chart"
+        >
+          {[0.25, 0.5, 0.75].map((offset) => (
+            <line
+              key={offset}
+              x1="0"
+              x2={chart.width}
+              y1={chart.height * offset}
+              y2={chart.height * offset}
+              stroke="#E6E8EF"
+              strokeWidth="1"
+            />
+          ))}
+          <line
+            x1="0"
+            x2={chart.width}
+            y1={chart.zeroY}
+            y2={chart.zeroY}
+            stroke="#CBD5E1"
+            strokeWidth="1"
+          />
+          <polyline
+            points={chart.linePoints}
+            fill="none"
+            stroke={report.netPnl >= 0 ? "#6C5DD3" : "#E25555"}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="4"
+          />
+        </svg>
+      )}
+    </div>
+  );
+}
+
+function DashboardOverview({
+  trades,
+  report,
+  score,
+  equityChart,
+  onNav,
+  currentDate,
+}: {
+  trades: TradeDto[];
+  report: AnalyticsReport;
+  score: ReturnType<typeof buildScoreMetrics>;
+  equityChart: ReturnType<typeof getEquityChart>;
+  onNav: (view: DashboardView) => void;
+  currentDate: Date;
+}) {
+  const openTrades = trades.filter((trade) => trade.exit === null);
+  const recentTrades = trades.slice(0, 8);
+  const allocation = buildSymbolAllocation(trades);
+  const loggedCapital = trades.reduce((sum, trade) => sum + getTradeNotional(trade), 0);
+  const dailyBars = report.daily.filter((day) => day.closedTrades > 0).slice(-30);
+  const maxDailyAbs = Math.max(1, ...dailyBars.map((day) => Math.abs(day.pnl)));
+
+  return (
+    <div className="space-y-4 p-4 lg:p-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard
+          label="Net P&L"
+          value={formatCompactMoney(report.netPnl)}
+          detail={`${numberFormatter.format(report.closedTrades)} closed / ${numberFormatter.format(report.openTrades)} open`}
+          tone={getMoneyTone(report.netPnl)}
+        />
+        <MetricCard
+          label="Win Rate"
+          value={formatPercent(report.winRate)}
+          detail={`${numberFormatter.format(report.winningTrades)} wins, ${numberFormatter.format(report.losingTrades)} losses`}
+        />
+        <MetricCard
+          label="Profit Factor"
+          value={formatRatio(report.profitFactor)}
+          detail={`${formatCompactMoney(report.grossProfit)} gross profit`}
+        />
+        <MetricCard
+          label="Expectancy"
+          value={formatCompactMoney(report.expectancy)}
+          detail="Per closed trade"
+          tone={getMoneyTone(report.expectancy)}
+        />
+        <MetricCard
+          label="Logged Capital"
+          value={formatCompactMoney(loggedCapital)}
+          detail={`${numberFormatter.format(trades.length)} total records`}
+        />
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.45fr)]">
+        <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[13px] font-semibold text-[#171923]">
+                Performance Curve
+              </h2>
+              <p className="mt-1 text-[11px] text-[#697386]">
+                {numberFormatter.format(report.activeDays)} active days
+              </p>
+            </div>
+            <p
+              className={`text-[13px] font-semibold ${getMetricValueClass(
+                getMoneyTone(report.netPnl)
+              )}`}
+            >
+              {formatMoney(report.netPnl)}
+            </p>
+          </div>
+          <EquityChart report={report} chart={equityChart} />
+        </section>
+
+        <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+          <div className="mb-3">
+            <h2 className="text-[13px] font-semibold text-[#171923]">
+              Symbol Allocation
+            </h2>
+            <p className="mt-1 text-[11px] text-[#697386]">
+              Based on {openTrades.length > 0 ? "open trade" : "logged trade"} cost basis
+            </p>
+          </div>
+
+          {allocation.length === 0 ? (
+            <div className="flex h-44 items-center justify-center text-center text-sm text-[#697386]">
+              No symbol exposure yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {allocation.map((item) => (
+                <div key={item.symbol}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ background: item.color }}
+                      />
+                      <span className="font-medium text-[#171923]">{item.symbol}</span>
+                    </div>
+                    <span className="text-[#697386]">
+                      {percentFormatter.format(item.percent)}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-[#EEF0F5]">
+                    <div
+                      className="h-2 rounded-full"
+                      style={{
+                        width: `${clampScore(item.percent * 100)}%`,
+                        background: item.color,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(280px,0.45fr)_minmax(0,1.55fr)]">
+        <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+          <div className="mb-3">
+            <h2 className="text-[13px] font-semibold text-[#171923]">Daily P&L</h2>
+            <p className="mt-1 text-[11px] text-[#697386]">
+              Last {numberFormatter.format(dailyBars.length)} realized days
+            </p>
+          </div>
+
+          {dailyBars.length === 0 ? (
+            <div className="flex h-40 items-center justify-center text-center text-sm text-[#697386]">
+              No realized daily P&L yet.
+            </div>
+          ) : (
+            <div className="flex h-40 items-end gap-1 border-b border-[#E6E8EF] pb-2">
+              {dailyBars.map((day) => {
+                const barHeight = Math.max(8, (Math.abs(day.pnl) / maxDailyAbs) * 100);
+
+                return (
+                  <div
+                    key={day.dateKey}
+                    className="flex min-w-2 flex-1 items-end justify-center"
+                    title={`${day.dateKey}: ${formatMoney(day.pnl)}`}
+                  >
+                    <div
+                      className={`w-full rounded-t-sm ${
+                        day.pnl >= 0 ? "bg-[#16A779]" : "bg-[#E25555]"
+                      }`}
+                      style={{ height: `${barHeight}%` }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-emerald-50 p-2">
+              <p className="text-[10px] text-[#697386]">Best day</p>
+              <p className="mt-1 truncate text-[13px] font-semibold text-[#16A779]">
+                {formatOptionalMoney(report.bestDayPnl)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-red-50 p-2">
+              <p className="text-[10px] text-[#697386]">Worst day</p>
+              <p className="mt-1 truncate text-[13px] font-semibold text-[#E25555]">
+                {formatOptionalMoney(report.worstDayPnl)}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="min-w-0 rounded-lg border border-[#E6E8EF] bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[13px] font-semibold text-[#171923]">
+                Recent Trades
+              </h2>
+              <p className="mt-1 text-[11px] text-[#697386]">
+                Last {numberFormatter.format(recentTrades.length)} executions
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNav("trades")}
+              className="h-7 rounded-md bg-[#6C5DD3]/10 px-2.5 text-[11px] font-medium text-[#6C5DD3] transition hover:bg-[#6C5DD3]/15 focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+            >
+              View all
+            </button>
+          </div>
+
+          {recentTrades.length === 0 ? (
+            <div className="flex h-44 items-center justify-center text-center text-sm text-[#697386]">
+              No trades logged yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#E6E8EF] text-left">
+                    {["Symbol", "Direction", "P&L", "Return", "Status", "Date"].map(
+                      (heading) => (
+                        <th
+                          key={heading}
+                          className="px-2 py-2 text-[10px] font-medium text-[#697386]"
+                        >
+                          {heading}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentTrades.map((trade) => {
+                    const pnl = getTradePnl(trade);
+                    const returnPct = getTradeReturnPct(trade);
+
+                    return (
+                      <tr key={trade.id} className="border-b border-[#F1F3F7] last:border-0">
+                        <td className="px-2 py-2">
+                          <div className="text-[12px] font-semibold text-[#171923]">
+                            {trade.symbol}
+                          </div>
+                          <div className="text-[10px] text-[#697386]">Trade</div>
+                        </td>
+                        <td className="px-2 py-2">
+                          <DirectionPill side={trade.side} />
+                        </td>
+                        <td
+                          className={`px-2 py-2 text-right text-[12px] font-semibold ${
+                            pnl === null
+                              ? "text-[#697386]"
+                              : pnl >= 0
+                                ? "text-[#16A779]"
+                                : "text-[#E25555]"
+                          }`}
+                        >
+                          {pnl === null ? "Open" : formatMoney(pnl)}
+                        </td>
+                        <td
+                          className={`px-2 py-2 text-[11px] font-medium ${
+                            returnPct === null
+                              ? "text-[#697386]"
+                              : returnPct >= 0
+                                ? "text-[#16A779]"
+                                : "text-[#E25555]"
+                          }`}
+                        >
+                          {formatPercent(returnPct)}
+                        </td>
+                        <td className="px-2 py-2">
+                          <StatusPill trade={trade} />
+                        </td>
+                        <td className="px-2 py-2 text-[11px] text-[#697386]">
+                          {formatShortDate(trade.closedAt ?? trade.openedAt)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-4">
+        {[
+          {
+            label: "Avg Win",
+            value: formatCompactMoney(report.averageWin),
+            tone: "profit" as const,
+          },
+          {
+            label: "Avg Loss",
+            value: formatCompactMoney(Math.abs(report.averageLoss)),
+            tone: "loss" as const,
+          },
+          {
+            label: "Score",
+            value: ratioFormatter.format(score.score),
+            tone: "neutral" as const,
+          },
+          {
+            label: "Open Reviews",
+            value: numberFormatter.format(openTrades.length),
+            tone: "neutral" as const,
+          },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className="rounded-lg border border-[#E6E8EF] bg-white p-3.5"
+          >
+            <p className="text-[11px] text-[#697386]">{item.label}</p>
+            <p
+              className={`mt-1 text-[18px] font-bold ${getMetricValueClass(
+                item.tone
+              )}`}
+            >
+              {item.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {openTrades.length > 0 ? (
+        <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[13px] font-semibold text-[#171923]">
+                Today&apos;s Review
+              </h2>
+              <p className="mt-1 text-[11px] text-[#697386]">
+                {numberFormatter.format(openTrades.length)} open trades on deck
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNav("monitor")}
+              className="h-7 rounded-md border border-[#6C5DD3] bg-[#6C5DD3]/5 px-2.5 text-[11px] font-medium text-[#6C5DD3]"
+            >
+              Open monitor
+            </button>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-3">
+            {openTrades.slice(0, 3).map((trade) => (
+              <div key={trade.id} className="rounded-lg bg-[#F7F8FA] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[12px] font-semibold text-[#171923]">
+                    {trade.symbol}
+                  </p>
+                  <span className="text-[11px] text-[#697386]">
+                    {numberFormatter.format(getOpenTradeAgeDays(trade, currentDate))}d
+                  </span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-[#697386]">
+                  {trade.notes || "No notes captured for this open trade."}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function OpenMonitorView({
+  trades,
+  currentDate,
+  onEdit,
+}: {
+  trades: TradeDto[];
+  currentDate: Date;
+  onEdit: (trade: TradeDto) => void;
+}) {
+  const openTrades = trades.filter((trade) => trade.exit === null);
+
+  if (openTrades.length === 0) {
+    return (
+      <div className="p-4 lg:p-5">
+        <EmptyState
+          title="No open trades"
+          body="Trades with no exit price will appear here for review."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 lg:p-5">
+      <div className="overflow-x-auto">
+        <div className="min-w-[920px] space-y-3">
+          <div className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.9fr_0.7fr_0.9fr_0.7fr] gap-3 px-4 text-[11px] font-semibold text-[#697386]">
+            <span>Symbol</span>
+            <span>Entry</span>
+            <span>Qty</span>
+            <span>Exposure</span>
+            <span>Age</span>
+            <span>Opened</span>
+            <span>Review</span>
+          </div>
+
+          {openTrades.map((trade, index) => {
+            const ageDays = getOpenTradeAgeDays(trade, currentDate);
+            const reviewScore = clampScore(100 - Math.min(ageDays * 2, 65));
+
+            return (
+              <div
+                key={trade.id}
+                className={`grid min-h-24 grid-cols-[1.4fr_0.8fr_0.7fr_0.9fr_0.7fr_0.9fr_0.7fr] items-center gap-3 rounded-lg border bg-white px-4 py-3 ${
+                  index === 0 ? "border-[#6C5DD3] shadow-[0_0_0_1px_#6C5DD3]" : "border-[#E6E8EF]"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-bold text-[#171923]">
+                    {trade.symbol}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-[#697386]">
+                    {trade.notes || "No journal note"}
+                  </p>
+                </div>
+                <p className="text-[14px] font-semibold text-[#171923]">
+                  {formatMoney(trade.entry)}
+                </p>
+                <p className="text-[13px] text-[#697386]">
+                  {numberFormatter.format(trade.quantity)}
+                </p>
+                <p className="text-[13px] font-medium text-[#171923]">
+                  {formatCompactMoney(getTradeNotional(trade))}
+                </p>
+                <p className="text-[13px] text-[#697386]">
+                  {numberFormatter.format(ageDays)}d
+                </p>
+                <p className="text-[12px] text-[#697386]">
+                  {formatShortDate(trade.openedAt)}
+                </p>
+                <div>
+                  <div className="mb-1 flex items-center gap-2">
+                    <div className="h-1.5 w-16 rounded-full bg-[#EEF0F5]">
+                      <div
+                        className="h-1.5 rounded-full bg-[#16A779]"
+                        style={{ width: `${reviewScore}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-[#697386]">
+                      {ratioFormatter.format(reviewScore)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onEdit(trade)}
+                    className="rounded bg-[#6C5DD3]/10 px-2 py-1 text-[11px] font-medium text-[#6C5DD3]"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalendarView({
+  calendar,
+  currentDate,
+  onCalendarMonthChange,
+}: {
+  calendar: ReturnType<typeof buildCalendarMonth>;
+  currentDate: Date;
+  onCalendarMonthChange: (updater: (current: Date) => Date) => void;
+}) {
+  return (
+    <div className="p-4 lg:p-5">
+      <section className="rounded-lg border border-[#E6E8EF] bg-white">
+        <div className="flex flex-col gap-3 border-b border-[#E6E8EF] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[#171923]">
+              {calendar.monthLabel}
+            </h2>
+            <p className="mt-1 text-[11px] text-[#697386]">
+              Realized P&L by activity date
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                onCalendarMonthChange((current) => addUtcMonths(current, -1))
+              }
+              className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] hover:bg-[#F7F8FA]"
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              onClick={() => onCalendarMonthChange(() => startOfUtcMonth(currentDate))}
+              className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] hover:bg-[#F7F8FA]"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onCalendarMonthChange((current) => addUtcMonths(current, 1))
+              }
+              className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] hover:bg-[#F7F8FA]"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto p-4">
+          <div className="grid min-w-[920px] grid-cols-[repeat(7,minmax(112px,1fr))_112px] gap-1">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+              <div
+                key={day}
+                className="rounded-md bg-[#F7F8FA] px-3 py-2 text-center text-[10px] font-semibold text-[#697386]"
+              >
+                {day}
+              </div>
+            ))}
+            <div className="rounded-md bg-[#F7F8FA] px-3 py-2 text-center text-[10px] font-semibold text-[#697386]">
+              Week
+            </div>
+
+            {calendar.weeks.map((week, weekIndex) => (
+              <div key={`week-${weekIndex}`} className="contents">
+                {week.days.map((day) => {
+                  const dayTone =
+                    day.pnl > 0 && day.isCurrentMonth
+                      ? "border-emerald-100 bg-emerald-50"
+                      : day.pnl < 0 && day.isCurrentMonth
+                        ? "border-red-100 bg-red-50"
+                        : day.isCurrentMonth
+                          ? "border-[#E6E8EF] bg-white"
+                          : "border-[#F1F3F7] bg-[#F7F8FA] text-[#A0A7B8]";
+
+                  return (
+                    <div
+                      key={day.dateKey}
+                      className={`flex min-h-28 flex-col rounded-md border p-3 ${dayTone}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-sm font-medium">{day.dayNumber}</span>
+                        {day.closedTrades > 0 ? (
+                          <span className="text-xs text-[#697386]">
+                            {formatPercent(day.winRate)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {day.trades > 0 ? (
+                        <div className="mt-auto pt-3">
+                          <p
+                            className={`text-sm font-semibold ${getMetricValueClass(
+                              getMoneyTone(day.pnl)
+                            )}`}
+                          >
+                            {formatMoney(day.pnl)}
+                          </p>
+                          <p className="mt-1 text-xs text-[#697386]">
+                            {numberFormatter.format(day.trades)}{" "}
+                            {day.trades === 1 ? "trade" : "trades"}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+                <div
+                  className={`flex min-h-28 flex-col justify-between rounded-md border p-3 ${
+                    week.summary.pnl > 0
+                      ? "border-emerald-100 bg-emerald-50"
+                      : week.summary.pnl < 0
+                        ? "border-red-100 bg-red-50"
+                        : "border-[#E6E8EF] bg-[#F7F8FA]"
+                  }`}
+                >
+                  <p className="text-[10px] font-semibold text-[#697386]">
+                    Week {weekIndex + 1}
+                  </p>
+                  {week.summary.activeDays > 0 ? (
+                    <div>
+                      <p
+                        className={`text-sm font-semibold ${getMetricValueClass(
+                          getMoneyTone(week.summary.pnl)
+                        )}`}
+                      >
+                        {formatMoney(week.summary.pnl)}
+                      </p>
+                      <p className="mt-1 text-xs text-[#697386]">
+                        {numberFormatter.format(week.summary.trades)} trades
+                      </p>
+                      <p className="mt-1 text-xs text-[#697386]">
+                        {numberFormatter.format(week.summary.activeDays)} active days
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#A0A7B8]">No activity</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AnalyticsView({
+  report,
+  score,
+  radarPoints,
+}: {
+  report: AnalyticsReport;
+  score: ReturnType<typeof buildScoreMetrics>;
+  radarPoints: string;
+}) {
+  return (
+    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(280px,0.42fr)_minmax(0,0.58fr)] lg:p-5">
+      <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[#171923]">
+              MarketPilot Score
+            </h2>
+            <p className="mt-1 text-[11px] text-[#697386]">
+              {numberFormatter.format(report.closedTrades)} closed trades
+            </p>
+          </div>
+          <p className="text-[28px] font-bold leading-none text-[#171923]">
+            {ratioFormatter.format(score.score)}
+          </p>
+        </div>
+
+        <div className="mt-4 flex justify-center">
+          <svg
+            viewBox="0 0 100 100"
+            className="h-52 w-52"
+            role="img"
+            aria-label="MarketPilot score radar"
+          >
+            <polygon
+              points="50,8 89.9,37 74.7,84 25.3,84 10.1,37"
+              fill="#F7F8FA"
+              stroke="#E6E8EF"
+              strokeWidth="0.8"
+            />
+            <polygon
+              points="50,22 76.6,41.3 66.5,72.7 33.5,72.7 23.4,41.3"
+              fill="none"
+              stroke="#D8DCE7"
+              strokeWidth="0.8"
+            />
+            <polygon
+              points={radarPoints}
+              fill="rgba(108, 93, 211, 0.18)"
+              stroke="#6C5DD3"
+              strokeWidth="1.6"
+            />
+          </svg>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          {score.metrics.map((metric) => (
+            <div key={metric.label}>
+              <div className="mb-1 flex items-center justify-between gap-3 text-[11px] text-[#697386]">
+                <span>{metric.label}</span>
+                <span>{ratioFormatter.format(metric.value)}</span>
+              </div>
+              <div className="h-2 rounded-full bg-[#EEF0F5]">
+                <div
+                  className="h-2 rounded-full bg-[#6C5DD3]"
+                  style={{ width: `${clampScore(metric.value)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+        <h2 className="text-[14px] font-semibold text-[#171923]">
+          Performance Breakdown
+        </h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {([
+            ["Gross profit", formatMoney(report.grossProfit), "profit" as const],
+            ["Gross loss", formatMoney(report.grossLoss), "loss" as const],
+            ["Best trade", formatOptionalMoney(report.bestTradePnl), "profit" as const],
+            ["Worst trade", formatOptionalMoney(report.worstTradePnl), "loss" as const],
+            ["Winning days", numberFormatter.format(report.winningDays), "neutral" as const],
+            ["Losing days", numberFormatter.format(report.losingDays), "neutral" as const],
+            ["Symbols traded", numberFormatter.format(report.symbolsTraded), "neutral" as const],
+            ["Active days", numberFormatter.format(report.activeDays), "neutral" as const],
+          ] satisfies Array<[string, string, MoneyTone]>).map(([label, value, tone]) => (
+            <div key={label} className="rounded-lg bg-[#F7F8FA] p-3">
+              <p className="text-[11px] text-[#697386]">{label}</p>
+              <p
+                className={`mt-1 truncate text-[15px] font-semibold ${getMetricValueClass(
+                  tone
+                )}`}
+              >
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[560px] border-collapse">
+            <thead>
+              <tr className="border-b border-[#E6E8EF] text-left">
+                {["Date", "Trades", "Win Rate", "P&L", "Symbols"].map((heading) => (
+                  <th
+                    key={heading}
+                    className="px-2 py-2 text-[10px] font-medium text-[#697386]"
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {report.daily.slice(-8).map((day) => (
+                <tr key={day.dateKey} className="border-b border-[#F1F3F7] last:border-0">
+                  <td className="px-2 py-2 text-[12px] font-medium text-[#171923]">
+                    {day.dateKey}
+                  </td>
+                  <td className="px-2 py-2 text-[12px] text-[#697386]">
+                    {numberFormatter.format(day.trades)}
+                  </td>
+                  <td className="px-2 py-2 text-[12px] text-[#697386]">
+                    {formatPercent(day.winRate)}
+                  </td>
+                  <td
+                    className={`px-2 py-2 text-[12px] font-semibold ${getMetricValueClass(
+                      getMoneyTone(day.pnl)
+                    )}`}
+                  >
+                    {formatMoney(day.pnl)}
+                  </td>
+                  <td className="px-2 py-2 text-[12px] text-[#697386]">
+                    {day.symbols.slice(0, 3).join(", ") || "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TradeLogView({
+  trades,
+  search,
+  statusFilter,
+  sideFilter,
+  selectedTrade,
+  deletingId,
+  saving,
+  onSearchChange,
+  onStatusFilterChange,
+  onSideFilterChange,
+  onSelectTrade,
+  onEdit,
+  onDelete,
+  onAddTrade,
+}: {
+  trades: TradeDto[];
+  search: string;
+  statusFilter: "all" | "open" | "closed";
+  sideFilter: "all" | TradeSide;
+  selectedTrade: TradeDto | null;
+  deletingId: string | null;
+  saving: boolean;
+  onSearchChange: (value: string) => void;
+  onStatusFilterChange: (value: "all" | "open" | "closed") => void;
+  onSideFilterChange: (value: "all" | TradeSide) => void;
+  onSelectTrade: (trade: TradeDto | null) => void;
+  onEdit: (trade: TradeDto) => void;
+  onDelete: (trade: TradeDto) => void;
+  onAddTrade: () => void;
+}) {
+  const totalPnl = trades
+    .map(getTradePnl)
+    .filter((pnl): pnl is number => pnl !== null)
+    .reduce((sum, pnl) => sum + pnl, 0);
+  const closedTrades = trades.filter((trade) => trade.exit !== null);
+  const wins = closedTrades.filter((trade) => (getTradePnl(trade) ?? 0) > 0).length;
+  const winRate = closedTrades.length > 0 ? wins / closedTrades.length : null;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#E6E8EF] bg-white px-4 py-3 lg:px-5">
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search symbol or notes"
+          className="h-8 w-full rounded-md border border-[#E6E8EF] bg-[#F7F8FA] px-3 text-[12px] text-[#171923] outline-none placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 sm:w-56"
+        />
+
+        <div className="flex gap-1">
+          {(["all", "open", "closed"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onStatusFilterChange(option)}
+              className={`h-8 rounded-md border px-2.5 text-[11px] font-medium capitalize ${
+                statusFilter === option
+                  ? "border-[#6C5DD3] bg-[#6C5DD3]/10 text-[#6C5DD3]"
+                  : "border-[#E6E8EF] bg-white text-[#697386]"
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-1">
+          {(["all", "buy", "sell"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onSideFilterChange(option)}
+              className={`h-8 rounded-md border px-2.5 text-[11px] font-medium capitalize ${
+                sideFilter === option
+                  ? "border-[#6C5DD3] bg-[#6C5DD3]/10 text-[#6C5DD3]"
+                  : "border-[#E6E8EF] bg-white text-[#697386]"
+              }`}
+            >
+              {option === "buy" ? "Long" : option === "sell" ? "Short" : "All"}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-4 text-[11px]">
+          <div>
+            <span className="text-[#697386]">Showing </span>
+            <span className="font-semibold text-[#171923]">
+              {numberFormatter.format(trades.length)}
+            </span>
+          </div>
+          <div>
+            <span className="text-[#697386]">Win Rate </span>
+            <span className="font-semibold text-[#16A779]">
+              {formatPercent(winRate)}
+            </span>
+          </div>
+          <div>
+            <span className="text-[#697386]">Total P&L </span>
+            <span
+              className={`font-semibold ${getMetricValueClass(
+                getMoneyTone(totalPnl)
+              )}`}
+            >
+              {formatMoney(totalPnl)}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onAddTrade}
+          className="h-8 rounded-md bg-[#6C5DD3] px-3 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7]"
+        >
+          Add Trade
+        </button>
+      </div>
+
+      {trades.length === 0 ? (
+        <div className="p-4 lg:p-5">
+          <EmptyState
+            title="No matching trades"
+            body="Adjust the filters or add a new trade to populate the log."
+          />
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex-1 overflow-auto">
+            <table className="w-full min-w-[980px] border-collapse bg-white">
+              <thead className="sticky top-0 z-10 bg-[#F7F8FA]">
+                <tr className="border-b border-[#E6E8EF] text-left">
+                  {[
+                    "Date",
+                    "Symbol",
+                    "Side",
+                    "Entry",
+                    "Exit",
+                    "Qty",
+                    "Size",
+                    "P&L",
+                    "Return",
+                    "Status",
+                    "Notes",
+                    "",
+                  ].map((heading) => (
+                    <th
+                      key={heading}
+                      className="px-3 py-2 text-[10px] font-medium text-[#697386]"
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {trades.map((trade) => {
+                  const pnl = getTradePnl(trade);
+                  const returnPct = getTradeReturnPct(trade);
+                  const deleting = deletingId === trade.id;
+                  const selected = selectedTrade?.id === trade.id;
+
+                  return (
+                    <tr
+                      key={trade.id}
+                      onClick={() => onSelectTrade(selected ? null : trade)}
+                      className={`cursor-pointer border-b border-[#F1F3F7] transition ${
+                        selected ? "bg-[#6C5DD3]/5" : "hover:bg-[#F7F8FA]"
+                      } ${deleting ? "opacity-50" : ""}`}
+                    >
+                      <td className="px-3 py-2 text-[11px] text-[#697386]">
+                        {formatShortDate(trade.openedAt)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="text-[13px] font-semibold text-[#171923]">
+                          {trade.symbol}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <DirectionPill side={trade.side} />
+                      </td>
+                      <td className="px-3 py-2 text-right text-[12px] text-[#171923]">
+                        {formatMoney(trade.entry)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[12px] text-[#697386]">
+                        {trade.exit === null ? "-" : formatMoney(trade.exit)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[12px] text-[#171923]">
+                        {numberFormatter.format(trade.quantity)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[12px] text-[#697386]">
+                        {formatCompactMoney(getTradeNotional(trade))}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right text-[12px] font-semibold ${
+                          pnl === null
+                            ? "text-[#697386]"
+                            : pnl >= 0
+                              ? "text-[#16A779]"
+                              : "text-[#E25555]"
+                        }`}
+                      >
+                        {pnl === null ? "Open" : formatMoney(pnl)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right text-[11px] font-medium ${
+                          returnPct === null
+                            ? "text-[#697386]"
+                            : returnPct >= 0
+                              ? "text-[#16A779]"
+                              : "text-[#E25555]"
+                        }`}
+                      >
+                        {formatPercent(returnPct)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <StatusPill trade={trade} />
+                      </td>
+                      <td className="max-w-48 px-3 py-2 text-[11px] text-[#697386]">
+                        <div className="truncate">{trade.notes || "-"}</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEdit(trade);
+                            }}
+                            disabled={saving || deleting}
+                            className="h-7 rounded-md border border-[#E6E8EF] px-2 text-[11px] font-medium text-[#697386] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDelete(trade);
+                            }}
+                            disabled={saving || deleting}
+                            className="h-7 rounded-md border border-red-100 px-2 text-[11px] font-medium text-[#E25555] hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {deleting ? "Deleting" : "Delete"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {selectedTrade ? (
+            <aside className="hidden w-[300px] shrink-0 overflow-y-auto border-l border-[#E6E8EF] bg-white p-4 lg:block">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[22px] font-bold leading-tight text-[#171923]">
+                    {selectedTrade.symbol}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <StatusPill trade={selectedTrade} />
+                    <span className="text-[11px] text-[#697386]">
+                      {getDirectionLabel(selectedTrade.side)}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onSelectTrade(null)}
+                  className="text-[12px] text-[#697386]"
+                >
+                  x
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {([
+                  {
+                    label: "P&L",
+                    value:
+                      getTradePnl(selectedTrade) === null
+                        ? "Open"
+                        : formatMoney(getTradePnl(selectedTrade) ?? 0),
+                    tone: getMoneyTone(getTradePnl(selectedTrade)),
+                  },
+                  {
+                    label: "Return",
+                    value: formatPercent(getTradeReturnPct(selectedTrade)),
+                    tone: getMoneyTone(getTradeReturnPct(selectedTrade)),
+                  },
+                  {
+                    label: "Position Size",
+                    value: formatCompactMoney(getTradeNotional(selectedTrade)),
+                    tone: "neutral" as const,
+                  },
+                  {
+                    label: "Quantity",
+                    value: numberFormatter.format(selectedTrade.quantity),
+                    tone: "neutral" as const,
+                  },
+                ] satisfies Array<{ label: string; value: string; tone: MoneyTone }>).map((item) => (
+                  <div key={item.label} className="rounded-lg bg-[#F7F8FA] p-2">
+                    <p className="text-[10px] text-[#697386]">{item.label}</p>
+                    <p
+                      className={`mt-1 truncate text-[13px] font-semibold ${getMetricValueClass(
+                        item.tone
+                      )}`}
+                    >
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 space-y-2 text-[12px]">
+                {[
+                  ["Entry Price", formatMoney(selectedTrade.entry)],
+                  ["Exit Price", selectedTrade.exit ? formatMoney(selectedTrade.exit) : "-"],
+                  ["Opened", formatDate(selectedTrade.openedAt)],
+                  ["Closed", formatDate(selectedTrade.closedAt)],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-3">
+                    <span className="text-[#697386]">{label}</span>
+                    <span className="text-right font-medium text-[#171923]">
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4">
+                <p className="mb-1 text-[11px] font-medium text-[#697386]">Notes</p>
+                <div className="rounded-lg bg-[#F7F8FA] p-3 text-[12px] leading-5 text-[#171923]">
+                  {selectedTrade.notes || "No notes captured."}
+                </div>
+              </div>
+            </aside>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TradeFormView({
+  form,
+  editingTrade,
+  saving,
+  error,
+  trades,
+  onUpdateForm,
+  onSubmit,
+  onReset,
+  onEdit,
+}: {
+  form: TradeFormState;
+  editingTrade: TradeDto | null;
+  saving: boolean;
+  error: string | null;
+  trades: TradeDto[];
+  onUpdateForm: <Key extends keyof TradeFormState>(
+    key: Key,
+    value: TradeFormState[Key]
+  ) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onReset: () => void;
+  onEdit: (trade: TradeDto) => void;
+}) {
+  const notedTrades = trades.filter((trade) => trade.notes).slice(0, 5);
+
+  return (
+    <div className="grid gap-4 p-4 lg:grid-cols-[380px_minmax(0,1fr)] lg:p-5">
+      <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[#171923]">
+              {editingTrade ? "Edit trade" : "New trade"}
+            </h2>
+            {editingTrade ? (
+              <p className="mt-1 text-[11px] text-[#697386]">
+                {editingTrade.symbol} opened {formatDate(editingTrade.openedAt)}
+              </p>
+            ) : null}
+          </div>
+          {editingTrade ? (
+            <button
+              type="button"
+              onClick={onReset}
+              className="h-8 rounded-md border border-[#E6E8EF] px-3 text-xs font-medium text-[#697386] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
+
+        {error ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700"
+          >
+            {error}
+          </p>
+        ) : null}
+
+        <form className="mt-4 grid gap-3" onSubmit={onSubmit}>
+          <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+            Symbol
+            <input
+              value={form.symbol}
+              onChange={(event) => onUpdateForm("symbol", event.target.value)}
+              className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              placeholder="AAPL"
+              maxLength={20}
+              disabled={saving}
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+              Side
+              <select
+                value={form.side}
+                onChange={(event) =>
+                  onUpdateForm("side", event.target.value as TradeSide)
+                }
+                className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                disabled={saving}
+              >
+                <option value="buy">Buy</option>
+                <option value="sell">Sell</option>
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+              Quantity
+              <input
+                value={form.quantity}
+                onChange={(event) => onUpdateForm("quantity", event.target.value)}
+                className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                inputMode="numeric"
+                min="1"
+                step="1"
+                type="number"
+                disabled={saving}
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+              Entry
+              <input
+                value={form.entry}
+                onChange={(event) => onUpdateForm("entry", event.target.value)}
+                className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                type="number"
+                disabled={saving}
+              />
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+              Exit
+              <input
+                value={form.exit}
+                onChange={(event) => onUpdateForm("exit", event.target.value)}
+                className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                type="number"
+                disabled={saving}
+              />
+            </label>
+          </div>
+
+          <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+            Opened
+            <input
+              value={form.openedAt}
+              onChange={(event) => onUpdateForm("openedAt", event.target.value)}
+              className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              placeholder="2026-06-20 14:30"
+              type="text"
+              disabled={saving}
+            />
+            <span className="text-xs font-normal text-[#697386]">
+              Use 24-hour time, for example 6/20 14:30 or 1430.
+            </span>
+          </label>
+
+          <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+            Closed
+            <input
+              value={form.closedAt}
+              onChange={(event) => onUpdateForm("closedAt", event.target.value)}
+              className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              placeholder="2026-06-20 15:45"
+              type="text"
+              disabled={saving}
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+            Notes
+            <textarea
+              value={form.notes}
+              onChange={(event) => onUpdateForm("notes", event.target.value)}
+              className="min-h-24 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              maxLength={5000}
+              disabled={saving}
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="mt-1 h-10 rounded-md bg-[#6C5DD3] px-4 text-sm font-semibold text-white transition hover:bg-[#5B4BC7] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#A0A7B8]"
+          >
+            {saving
+              ? "Saving..."
+              : editingTrade
+                ? "Save changes"
+                : "Create trade"}
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+        <div className="mb-3">
+          <h2 className="text-[14px] font-semibold text-[#171923]">
+            Recent Notes
+          </h2>
+          <p className="mt-1 text-[11px] text-[#697386]">
+            Notes stored on trade records
+          </p>
+        </div>
+
+        {notedTrades.length === 0 ? (
+          <EmptyState
+            title="No notes yet"
+            body="Add notes to a trade to build your journal history."
+          />
+        ) : (
+          <div className="grid gap-3">
+            {notedTrades.map((trade) => (
+              <button
+                key={trade.id}
+                type="button"
+                onClick={() => onEdit(trade)}
+                className="rounded-lg border border-[#E6E8EF] bg-white p-3 text-left transition hover:border-[#6C5DD3]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[13px] font-semibold text-[#171923]">
+                      {trade.symbol}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[#697386]">
+                      {formatShortDate(trade.openedAt)}
+                    </p>
+                  </div>
+                  <StatusPill trade={trade} />
+                </div>
+                <p className="mt-2 line-clamp-3 text-[12px] leading-5 text-[#4B5565]">
+                  {trade.notes}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export default function TradeJournal({
+  initialTrades,
+  userName,
+  userEmail,
+  nowIso,
+}: TradeJournalProps) {
   const [trades, setTrades] = useState(() =>
     sortTrades(initialTrades.map(normalizeTrade))
   );
+  const [activeView, setActiveView] = useState<DashboardView>("dashboard");
   const [analyticsRange, setAnalyticsRange] =
     useState<AnalyticsRangeKey>("all");
   const [calendarMonth, setCalendarMonth] = useState(() =>
     getLatestTradeMonth(initialTrades.map(normalizeTrade))
   );
-  const [form, setForm] = useState<TradeFormState>(() => createEmptyForm());
+  const [form, setForm] = useState<TradeFormState>(() => createEmptyForm(nowIso));
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [tradeSearch, setTradeSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<"all" | "open" | "closed">("all");
+  const [sideFilter, setSideFilter] = useState<"all" | TradeSide>("all");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const currentDate = useMemo(() => new Date(), []);
+  const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
+  const displayName = userName || userEmail || "Authenticated trader";
 
   const editingTrade = useMemo(
     () => trades.find((trade) => trade.id === editingId) ?? null,
     [editingId, trades]
+  );
+  const selectedTrade = useMemo(
+    () => trades.find((trade) => trade.id === selectedTradeId) ?? null,
+    [selectedTradeId, trades]
   );
 
   const analyticsReport = useMemo(
@@ -411,6 +2218,33 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
     [analyticsReport.equityCurve]
   );
   const radarPoints = useMemo(() => getRadarPoints(score.metrics), [score.metrics]);
+  const filteredTrades = useMemo(() => {
+    const query = tradeSearch.trim().toLowerCase();
+
+    return trades.filter((trade) => {
+      if (
+        query &&
+        !trade.symbol.toLowerCase().includes(query) &&
+        !(trade.notes ?? "").toLowerCase().includes(query)
+      ) {
+        return false;
+      }
+
+      if (statusFilter === "open" && trade.exit !== null) {
+        return false;
+      }
+
+      if (statusFilter === "closed" && trade.exit === null) {
+        return false;
+      }
+
+      if (sideFilter !== "all" && trade.side !== sideFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [sideFilter, statusFilter, tradeSearch, trades]);
 
   function updateForm<Key extends keyof TradeFormState>(
     key: Key,
@@ -421,14 +2255,20 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
 
   function resetForm() {
     setEditingId(null);
-    setForm(createEmptyForm());
+    setForm(createEmptyForm(nowIso));
     setError(null);
+  }
+
+  function openNewTrade() {
+    resetForm();
+    setActiveView("journal");
   }
 
   function startEdit(trade: TradeDto) {
     setEditingId(trade.id);
     setForm(tradeToForm(trade));
     setError(null);
+    setActiveView("journal");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -471,7 +2311,9 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
             : [nextTrade, ...current]
         )
       );
+      setSelectedTradeId(nextTrade.id);
       resetForm();
+      setActiveView("trades");
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -510,6 +2352,10 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
       if (editingId === trade.id) {
         resetForm();
       }
+
+      if (selectedTradeId === trade.id) {
+        setSelectedTradeId(null);
+      }
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -521,652 +2367,98 @@ export default function TradeJournal({ initialTrades }: TradeJournalProps) {
     }
   }
 
+  const meta = viewMeta[activeView];
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-      <section>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-              Reports
-            </p>
-            <h2 className="mt-1 text-xl font-semibold tracking-normal text-zinc-950">
-              User analytics
-            </h2>
-          </div>
+    <div className="min-h-screen bg-[#F7F8FA] text-[#171923] lg:flex">
+      <Sidebar
+        activeView={activeView}
+        userName={displayName}
+        userEmail={userEmail}
+        onAddTrade={openNewTrade}
+        onNav={setActiveView}
+      />
 
-          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-            {rangeOptions.map((option) => {
-              const selected = analyticsRange === option.key;
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <TopBar
+          title={meta.title}
+          subtitle={meta.subtitle}
+          userName={displayName}
+          analyticsRange={analyticsRange}
+          onRangeChange={setAnalyticsRange}
+        />
+        <MobileNav activeView={activeView} onNav={setActiveView} />
 
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setAnalyticsRange(option.key)}
-                  className={`h-9 min-w-16 border px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-600 ${
-                    selected
-                      ? "border-zinc-950 bg-zinc-950 text-white"
-                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
-                  }`}
-                  aria-pressed={selected}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <MetricCard
-            label="Net P&L"
-            value={formatMoney(analyticsReport.netPnl)}
-            detail={`${numberFormatter.format(
-              analyticsReport.closedTrades
-            )} closed / ${numberFormatter.format(analyticsReport.openTrades)} open`}
-            tone={getMoneyTone(analyticsReport.netPnl)}
-          />
-          <MetricCard
-            label="Win rate"
-            value={formatPercent(analyticsReport.winRate)}
-            detail={`${numberFormatter.format(
-              analyticsReport.winningTrades
-            )} wins, ${numberFormatter.format(analyticsReport.losingTrades)} losses`}
-          />
-          <MetricCard
-            label="Profit factor"
-            value={formatRatio(analyticsReport.profitFactor)}
-            detail={`${formatMoney(analyticsReport.grossProfit)} gross win`}
-          />
-          <MetricCard
-            label="Avg win/loss"
-            value={formatRatio(analyticsReport.averageWinLoss)}
-            detail={`${formatMoney(analyticsReport.averageWin)} / ${formatMoney(
-              Math.abs(analyticsReport.averageLoss)
-            )}`}
-          />
-          <MetricCard
-            label="Expectancy"
-            value={formatMoney(analyticsReport.expectancy)}
-            detail="Per closed trade"
-            tone={getMoneyTone(analyticsReport.expectancy)}
-          />
-        </div>
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
-          <section className="border border-zinc-200 bg-white p-4">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-zinc-950">
-                  Daily net cumulative P&amp;L
-                </h3>
-                <p className="mt-1 text-sm text-zinc-500">
-                  {numberFormatter.format(analyticsReport.activeDays)} active days
-                </p>
-              </div>
-              <p
-                className={`text-sm font-semibold ${getMetricValueClass(
-                  getMoneyTone(analyticsReport.netPnl)
-                )}`}
-              >
-                {formatMoney(analyticsReport.netPnl)}
-              </p>
-            </div>
-
-            <div className="mt-4 h-64 overflow-hidden border border-zinc-100 bg-zinc-50">
-              {analyticsReport.equityCurve.length === 0 ? (
-                <div className="flex h-full items-center justify-center px-4 text-center text-sm text-zinc-500">
-                  No closed trades in this period.
-                </div>
-              ) : (
-                <svg
-                  viewBox={`0 0 ${equityChart.width} ${equityChart.height}`}
-                  className="h-full w-full"
-                  role="img"
-                  aria-label="Daily cumulative P&L chart"
-                >
-                  <line
-                    x1="0"
-                    x2={equityChart.width}
-                    y1={equityChart.zeroY}
-                    y2={equityChart.zeroY}
-                    stroke="#d4d4d8"
-                    strokeWidth="1"
-                  />
-                  <polyline
-                    points={equityChart.linePoints}
-                    fill="none"
-                    stroke={analyticsReport.netPnl >= 0 ? "#047857" : "#b91c1c"}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="4"
-                  />
-                </svg>
-              )}
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="border border-zinc-100 bg-zinc-50 p-3">
-                <p className="text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">
-                  Best day
-                </p>
-                <p className="mt-2 text-sm font-semibold text-emerald-700">
-                  {formatOptionalMoney(analyticsReport.bestDayPnl)}
-                </p>
-              </div>
-              <div className="border border-zinc-100 bg-zinc-50 p-3">
-                <p className="text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">
-                  Worst day
-                </p>
-                <p className="mt-2 text-sm font-semibold text-red-700">
-                  {formatOptionalMoney(analyticsReport.worstDayPnl)}
-                </p>
-              </div>
-              <div className="border border-zinc-100 bg-zinc-50 p-3">
-                <p className="text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">
-                  Symbols
-                </p>
-                <p className="mt-2 text-sm font-semibold text-zinc-950">
-                  {numberFormatter.format(analyticsReport.symbolsTraded)}
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section className="border border-zinc-200 bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-zinc-950">
-                  MarketPilot score
-                </h3>
-                <p className="mt-1 text-sm text-zinc-500">
-                  {numberFormatter.format(analyticsReport.closedTrades)} closed trades
-                </p>
-              </div>
-              <p className="text-2xl font-semibold text-zinc-950">
-                {ratioFormatter.format(score.score)}
-              </p>
-            </div>
-
-            <div className="mt-4 flex justify-center">
-              <svg
-                viewBox="0 0 100 100"
-                className="h-48 w-48"
-                role="img"
-                aria-label="MarketPilot score radar"
-              >
-                <polygon
-                  points="50,8 89.9,37 74.7,84 25.3,84 10.1,37"
-                  fill="#f4f4f5"
-                  stroke="#d4d4d8"
-                  strokeWidth="0.8"
-                />
-                <polygon
-                  points="50,22 76.6,41.3 66.5,72.7 33.5,72.7 23.4,41.3"
-                  fill="none"
-                  stroke="#d4d4d8"
-                  strokeWidth="0.8"
-                />
-                <polygon
-                  points={radarPoints}
-                  fill="rgba(16, 185, 129, 0.22)"
-                  stroke="#047857"
-                  strokeWidth="1.6"
-                />
-              </svg>
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              {score.metrics.map((metric) => (
-                <div key={metric.label}>
-                  <div className="mb-1 flex items-center justify-between gap-3 text-xs text-zinc-500">
-                    <span>{metric.label}</span>
-                    <span>{ratioFormatter.format(metric.value)}</span>
-                  </div>
-                  <div className="h-2 bg-zinc-100">
-                    <div
-                      className="h-2 bg-emerald-600"
-                      style={{ width: `${clampScore(metric.value)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      </section>
-
-      <section className="mt-5 border border-zinc-200 bg-white">
-        <div className="flex flex-col gap-3 border-b border-zinc-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-950">Calendar</h2>
-            <p className="mt-1 text-sm text-zinc-500">{calendar.monthLabel}</p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                setCalendarMonth((current) => addUtcMonths(current, -1))
-              }
-              className="h-9 border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            >
-              Prev
-            </button>
-            <button
-              type="button"
-              onClick={() => setCalendarMonth(startOfUtcMonth(currentDate))}
-              className="h-9 border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setCalendarMonth((current) => addUtcMonths(current, 1))
-              }
-              className="h-9 border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto p-4">
-          <div className="grid min-w-[920px] grid-cols-[repeat(7,minmax(112px,1fr))_112px] gap-1">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <div
-                key={day}
-                className="border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500"
-              >
-                {day}
-              </div>
-            ))}
-            <div className="border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500">
-              Week
-            </div>
-
-            {calendar.weeks.map((week, weekIndex) => (
-              <div key={`week-${weekIndex}`} className="contents">
-                {week.days.map((day) => {
-                  const dayTone =
-                    day.pnl > 0 && day.isCurrentMonth
-                      ? "border-emerald-200 bg-emerald-50"
-                      : day.pnl < 0 && day.isCurrentMonth
-                        ? "border-red-200 bg-red-50"
-                        : day.isCurrentMonth
-                          ? "border-zinc-200 bg-white"
-                          : "border-zinc-100 bg-zinc-50 text-zinc-400";
-
-                  return (
-                    <div
-                      key={day.dateKey}
-                      className={`flex min-h-28 flex-col border p-3 ${dayTone}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-sm font-medium">
-                          {day.dayNumber}
-                        </span>
-                        {day.closedTrades > 0 ? (
-                          <span className="text-xs text-zinc-500">
-                            {formatPercent(day.winRate)}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {day.trades > 0 ? (
-                        <div className="mt-auto pt-3">
-                          <p
-                            className={`text-sm font-semibold ${getMetricValueClass(
-                              getMoneyTone(day.pnl)
-                            )}`}
-                          >
-                            {formatMoney(day.pnl)}
-                          </p>
-                          <p className="mt-1 text-xs text-zinc-500">
-                            {numberFormatter.format(day.trades)}{" "}
-                            {day.trades === 1 ? "trade" : "trades"}
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-
-                <div
-                  className={`flex min-h-28 flex-col justify-between border p-3 ${
-                    week.summary.pnl > 0
-                      ? "border-emerald-200 bg-emerald-50"
-                      : week.summary.pnl < 0
-                        ? "border-red-200 bg-red-50"
-                        : "border-zinc-200 bg-zinc-50"
-                  }`}
-                >
-                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500">
-                    Week {weekIndex + 1}
-                  </p>
-                  {week.summary.activeDays > 0 ? (
-                    <div>
-                      <p
-                        className={`text-sm font-semibold ${getMetricValueClass(
-                          getMoneyTone(week.summary.pnl)
-                        )}`}
-                      >
-                        {formatMoney(week.summary.pnl)}
-                      </p>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {numberFormatter.format(week.summary.trades)} trades
-                      </p>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {numberFormatter.format(week.summary.activeDays)} active days
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-zinc-400">No activity</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <div className="mt-5 grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <section className="border border-zinc-200 bg-white p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-zinc-950">
-                {editingTrade ? "Edit trade" : "New trade"}
-              </h2>
-              {editingTrade ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  {editingTrade.symbol} opened {formatDate(editingTrade.openedAt)}
-                </p>
-              ) : null}
-            </div>
-            {editingTrade ? (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="h-8 border border-zinc-300 px-3 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              >
-                Cancel
-              </button>
-            ) : null}
-          </div>
-
-          {error ? (
-            <p
-              role="alert"
-              className="mt-4 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-            >
-              {error}
-            </p>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {activeView === "dashboard" ? (
+            <DashboardOverview
+              trades={trades}
+              report={analyticsReport}
+              score={score}
+              equityChart={equityChart}
+              onNav={setActiveView}
+              currentDate={currentDate}
+            />
           ) : null}
 
-          <form className="mt-4 grid gap-3" onSubmit={handleSubmit}>
-            <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Symbol
-              <input
-                value={form.symbol}
-                onChange={(event) => updateForm("symbol", event.target.value)}
-                className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                placeholder="AAPL"
-                maxLength={20}
-                disabled={saving}
-              />
-            </label>
+          {activeView === "trades" ? (
+            <TradeLogView
+              trades={filteredTrades}
+              search={tradeSearch}
+              statusFilter={statusFilter}
+              sideFilter={sideFilter}
+              selectedTrade={selectedTrade}
+              deletingId={deletingId}
+              saving={saving}
+              onSearchChange={setTradeSearch}
+              onStatusFilterChange={setStatusFilter}
+              onSideFilterChange={setSideFilter}
+              onSelectTrade={(trade) => setSelectedTradeId(trade?.id ?? null)}
+              onEdit={startEdit}
+              onDelete={handleDelete}
+              onAddTrade={openNewTrade}
+            />
+          ) : null}
 
-            <div className="grid grid-cols-2 gap-3">
-              <label className="grid gap-1 text-sm font-medium text-zinc-700">
-                Side
-                <select
-                  value={form.side}
-                  onChange={(event) =>
-                    updateForm("side", event.target.value as TradeSide)
-                  }
-                  className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  disabled={saving}
-                >
-                  <option value="buy">Buy</option>
-                  <option value="sell">Sell</option>
-                </select>
-              </label>
+          {activeView === "monitor" ? (
+            <OpenMonitorView
+              trades={trades}
+              currentDate={currentDate}
+              onEdit={startEdit}
+            />
+          ) : null}
 
-              <label className="grid gap-1 text-sm font-medium text-zinc-700">
-                Quantity
-                <input
-                  value={form.quantity}
-                  onChange={(event) =>
-                    updateForm("quantity", event.target.value)
-                  }
-                  className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  inputMode="numeric"
-                  min="1"
-                  step="1"
-                  type="number"
-                  disabled={saving}
-                />
-              </label>
-            </div>
+          {activeView === "calendar" ? (
+            <CalendarView
+              calendar={calendar}
+              currentDate={currentDate}
+              onCalendarMonthChange={setCalendarMonth}
+            />
+          ) : null}
 
-            <div className="grid grid-cols-2 gap-3">
-              <label className="grid gap-1 text-sm font-medium text-zinc-700">
-                Entry
-                <input
-                  value={form.entry}
-                  onChange={(event) => updateForm("entry", event.target.value)}
-                  className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  type="number"
-                  disabled={saving}
-                />
-              </label>
+          {activeView === "analytics" ? (
+            <AnalyticsView
+              report={analyticsReport}
+              score={score}
+              radarPoints={radarPoints}
+            />
+          ) : null}
 
-              <label className="grid gap-1 text-sm font-medium text-zinc-700">
-                Exit
-                <input
-                  value={form.exit}
-                  onChange={(event) => updateForm("exit", event.target.value)}
-                  className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  type="number"
-                  disabled={saving}
-                />
-              </label>
-            </div>
-
-            <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Opened
-              <input
-                value={form.openedAt}
-                onChange={(event) => updateForm("openedAt", event.target.value)}
-                className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                placeholder="2026-06-20 14:30"
-                type="text"
-                disabled={saving}
-              />
-              <span className="text-xs font-normal text-zinc-500">
-                Use 24-hour time, for example 6/20 14:30 or 1430.
-              </span>
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Closed
-              <input
-                value={form.closedAt}
-                onChange={(event) => updateForm("closedAt", event.target.value)}
-                className="h-10 border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                placeholder="2026-06-20 15:45"
-                type="text"
-                disabled={saving}
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Notes
-              <textarea
-                value={form.notes}
-                onChange={(event) => updateForm("notes", event.target.value)}
-                className="min-h-24 resize-y border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                maxLength={5000}
-                disabled={saving}
-              />
-            </label>
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="mt-1 h-10 bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-zinc-400"
-            >
-              {saving
-                ? "Saving..."
-                : editingTrade
-                  ? "Save changes"
-                  : "Create trade"}
-            </button>
-          </form>
-        </section>
-
-        <section className="min-w-0 border border-zinc-200 bg-white">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-            <h2 className="text-base font-semibold text-zinc-950">
-              Trade history
-            </h2>
-            <p className="text-sm text-zinc-500">
-              {numberFormatter.format(trades.length)} records
-            </p>
-          </div>
-
-          {trades.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <p className="text-sm font-medium text-zinc-800">No trades yet</p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Add your first trade to start the journal.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse text-left text-sm">
-                <thead className="bg-zinc-50 text-xs uppercase tracking-[0.08em] text-zinc-500">
-                  <tr>
-                    <th className="border-b border-zinc-200 px-4 py-3 font-semibold">
-                      Symbol
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 font-semibold">
-                      Qty
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 font-semibold">
-                      Entry
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 font-semibold">
-                      Exit
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 font-semibold">
-                      Opened
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 font-semibold">
-                      Closed
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 font-semibold">
-                      Notes
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 text-right font-semibold">
-                      P&amp;L
-                    </th>
-                    <th className="border-b border-zinc-200 px-4 py-3 text-right font-semibold">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map((trade) => {
-                    const pnl = getTradePnl(trade);
-                    const deleting = deletingId === trade.id;
-
-                    return (
-                      <tr
-                        key={trade.id}
-                        className={`border-b border-zinc-100 transition ${
-                          deleting ? "opacity-50" : "hover:bg-zinc-50"
-                        }`}
-                      >
-                        <td className="px-4 py-3 align-top">
-                          <div className="font-semibold text-zinc-950">
-                            {trade.symbol}
-                          </div>
-                          <div className="mt-1 text-xs uppercase tracking-[0.12em] text-zinc-500">
-                            {trade.side}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 align-top text-zinc-700">
-                          {numberFormatter.format(trade.quantity)}
-                        </td>
-                        <td className="px-4 py-3 align-top text-zinc-700">
-                          {formatMoney(trade.entry)}
-                        </td>
-                        <td className="px-4 py-3 align-top text-zinc-700">
-                          {trade.exit === null ? "Open" : formatMoney(trade.exit)}
-                        </td>
-                        <td className="px-4 py-3 align-top text-zinc-700">
-                          {formatDate(trade.openedAt)}
-                        </td>
-                        <td className="px-4 py-3 align-top text-zinc-700">
-                          {formatDate(trade.closedAt)}
-                        </td>
-                        <td className="max-w-56 px-4 py-3 align-top text-zinc-700">
-                          <div className="truncate">
-                            {trade.notes ? (
-                              trade.notes
-                            ) : (
-                              <span className="text-zinc-400">None</span>
-                            )}
-                          </div>
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right align-top font-semibold ${
-                            pnl === null
-                              ? "text-zinc-400"
-                              : pnl >= 0
-                                ? "text-emerald-700"
-                                : "text-red-700"
-                          }`}
-                        >
-                          {pnl === null ? "Open" : formatMoney(pnl)}
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => startEdit(trade)}
-                              disabled={saving || deleting}
-                              className="h-8 border border-zinc-300 px-3 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(trade)}
-                              disabled={saving || deleting}
-                              className="h-8 border border-red-200 px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {deleting ? "Deleting..." : "Delete"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
+          {activeView === "journal" ? (
+            <TradeFormView
+              form={form}
+              editingTrade={editingTrade}
+              saving={saving}
+              error={error}
+              trades={trades}
+              onUpdateForm={updateForm}
+              onSubmit={handleSubmit}
+              onReset={resetForm}
+              onEdit={startEdit}
+            />
+          ) : null}
+        </div>
+      </main>
     </div>
   );
 }

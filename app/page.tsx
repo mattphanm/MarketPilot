@@ -1,4 +1,4 @@
-import { signInWithGoogle, signOutUser } from "@/app/actions/auth";
+import { signInWithGoogle } from "@/app/actions/auth";
 import TradeJournal from "@/app/components/trade-journal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -34,17 +34,20 @@ function serializeTrade(trade: {
 
 function SignInScreen() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-50">
-      <section className="w-full max-w-sm border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
+    <main className="flex min-h-screen items-center justify-center bg-[#1E1B2E] px-6 text-white">
+      <section className="w-full max-w-sm rounded-lg border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
         <div className="mb-8">
-          <p className="text-sm font-medium uppercase tracking-[0.18em] text-emerald-300">
+          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-[#6C5DD3] text-sm font-bold text-white">
+            MP
+          </div>
+          <p className="text-sm font-medium uppercase tracking-[0.18em] text-[#A8A5C1]">
             MarketPilot
           </p>
           <h1 className="mt-3 text-2xl font-semibold tracking-normal">
-            Trade journal
+            Investor analytics
           </h1>
-          <p className="mt-3 text-sm leading-6 text-zinc-400">
-            Sign in to track executions, review outcomes, and keep your trading
+          <p className="mt-3 text-sm leading-6 text-[#C9C6DD]">
+            Sign in to review executions, analytics, open trades, and journal
             notes in one private workspace.
           </p>
         </div>
@@ -52,7 +55,7 @@ function SignInScreen() {
         <form action={signInWithGoogle}>
           <button
             type="submit"
-            className="flex h-11 w-full items-center justify-center border border-zinc-700 bg-zinc-50 px-4 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-zinc-900"
+            className="flex h-11 w-full items-center justify-center rounded-md bg-[#6C5DD3] px-4 text-sm font-semibold text-white transition hover:bg-[#5B4BC7] focus:outline-none focus:ring-2 focus:ring-white/60 focus:ring-offset-2 focus:ring-offset-[#1E1B2E]"
           >
             Sign in with Google
           </button>
@@ -93,35 +96,11 @@ export default async function Home() {
     session.user?.name ?? session.user?.email ?? "Authenticated trader";
 
   return (
-    <main className="min-h-screen bg-zinc-100 text-zinc-950">
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-              MarketPilot
-            </p>
-            <h1 className="truncate text-lg font-semibold tracking-normal text-zinc-950">
-              Trade Journal
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <p className="hidden max-w-56 truncate text-sm text-zinc-600 sm:block">
-              {displayName}
-            </p>
-            <form action={signOutUser}>
-              <button
-                type="submit"
-                className="h-9 border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition hover:border-zinc-400 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
-        </div>
-      </header>
-
-      <TradeJournal initialTrades={serializedTrades} />
-    </main>
+    <TradeJournal
+      initialTrades={serializedTrades}
+      userName={displayName}
+      userEmail={session.user?.email}
+      nowIso={new Date().toISOString()}
+    />
   );
 }
