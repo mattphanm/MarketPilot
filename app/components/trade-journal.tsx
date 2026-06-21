@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Search,
   Settings,
-  Star,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
@@ -23,11 +22,8 @@ import {
   parseTradeDateInput,
 } from "@/lib/trades/date-input";
 import {
-  addUtcMonths,
-  buildCalendarMonth,
   createAnalyticsReport,
   getTradePnl,
-  startOfUtcMonth,
   type AnalyticsRangeKey,
   type AnalyticsReport,
   type EquityPoint,
@@ -72,22 +68,6 @@ type ApiTradeBody = {
 };
 
 type MoneyTone = "neutral" | "profit" | "loss";
-
-type WatchlistItem = {
-  id: string;
-  symbol: string;
-  name: string;
-  price: number;
-  targetEntry: number;
-  stop: number;
-  target: number;
-  confidence: number;
-  alertState: "Triggered" | "Near Entry" | "Watching";
-  thesis: string;
-  catalyst: string;
-  tags: string[];
-  trade: TradeDto;
-};
 
 type PlaybookSummary = {
   id: string;
@@ -550,51 +530,6 @@ function buildReturnDistribution(trades: TradeDto[]) {
   return buckets;
 }
 
-function buildWatchlistItems(trades: TradeDto[], now: Date): WatchlistItem[] {
-  const openTrades = trades.filter((trade) => trade.exit === null);
-  const source = (openTrades.length > 0 ? openTrades : trades).slice(0, 8);
-
-  return source.map((trade) => {
-    const isLong = trade.side === "buy";
-    const price = trade.exit ?? trade.entry;
-    const targetEntry = trade.entry;
-    const stop = trade.entry * (isLong ? 0.95 : 1.05);
-    const target = trade.entry * (isLong ? 1.12 : 0.88);
-    const ageDays = getTradeHoldDays(trade, now);
-    const hasNotes = Boolean(trade.notes?.trim());
-    const confidence = clampScore(
-      58 + (hasNotes ? 16 : 0) + Math.max(0, 18 - ageDays)
-    );
-    const distanceFromEntry = Math.abs(price - targetEntry) / targetEntry;
-    const alertState =
-      trade.exit === null
-        ? "Triggered"
-        : distanceFromEntry <= 0.025
-          ? "Near Entry"
-          : "Watching";
-
-    return {
-      id: trade.id,
-      symbol: trade.symbol,
-      name: `${getDirectionLabel(trade.side)} ${trade.quantity} shares`,
-      price,
-      targetEntry,
-      stop,
-      target,
-      confidence,
-      alertState,
-      thesis:
-        trade.notes || "No thesis note has been captured for this trade yet.",
-      catalyst: formatShortDate(trade.closedAt ?? trade.openedAt),
-      tags: [
-        getDirectionLabel(trade.side),
-        trade.exit === null ? "Open" : "Closed",
-      ],
-      trade,
-    };
-  });
-}
-
 function buildPlaybooks(trades: TradeDto[], now: Date): PlaybookSummary[] {
   const candidates: Array<{
     id: string;
@@ -610,7 +545,7 @@ function buildPlaybooks(trades: TradeDto[], now: Date): PlaybookSummary[] {
       rules: [
         "Entry has a written thesis",
         "Exit price is captured for review",
-        "Position size is visible before entry",
+        "Risk is defined before entry",
       ],
       trades: trades.filter((trade) => trade.side === "buy"),
     },
@@ -628,7 +563,7 @@ function buildPlaybooks(trades: TradeDto[], now: Date): PlaybookSummary[] {
     {
       id: "open-review",
       name: "Open Trade Review",
-      description: "Active positions that still need exit decisions and updated notes.",
+      description: "Trades that still need exit decisions and updated notes.",
       rules: [
         "Review open trades daily",
         "Update notes when thesis changes",
@@ -1281,7 +1216,7 @@ function DashboardOverview({
               Symbol Allocation
             </h2>
             <p className="mt-1 text-[11px] text-[#697386]">
-              Based on {openTrades.length > 0 ? "open trade" : "logged trade"} cost basis
+              Based on {openTrades.length > 0 ? "open trade" : "logged trade"} exposure
             </p>
           </div>
 
@@ -1545,689 +1480,6 @@ function DashboardOverview({
           </div>
         </section>
       ) : null}
-    </div>
-  );
-}
-
-function PortfolioView({
-  trades,
-  report,
-  equityChart,
-  currentDate,
-  onEdit,
-}: {
-  trades: TradeDto[];
-  report: AnalyticsReport;
-  equityChart: ReturnType<typeof getEquityChart>;
-  currentDate: Date;
-  onEdit: (trade: TradeDto) => void;
-}) {
-  const openTrades = trades.filter((trade) => trade.exit === null);
-  const allocation = buildSymbolAllocation(trades);
-  const loggedCapital = trades.reduce((sum, trade) => sum + getTradeNotional(trade), 0);
-  const openCapital = openTrades.reduce((sum, trade) => sum + getTradeNotional(trade), 0);
-  const averageOpenAge =
-    openTrades.length > 0
-      ? openTrades.reduce(
-          (sum, trade) => sum + getOpenTradeAgeDays(trade, currentDate),
-          0
-        ) / openTrades.length
-      : 0;
-
-  return (
-    <div className="flex-1 space-y-4 overflow-y-auto p-5">
-      <div className="grid gap-3 md:grid-cols-4">
-        {[
-          {
-            label: "Logged Capital",
-            value: formatCompactMoney(loggedCapital),
-            sub: `${numberFormatter.format(trades.length)} total trades`,
-            color: "#171923",
-          },
-          {
-            label: "Realized P&L",
-            value: formatCompactMoney(report.netPnl),
-            sub: "Closed trades",
-            color: report.netPnl >= 0 ? "#16A779" : "#E25555",
-          },
-          {
-            label: "Open Capital",
-            value: formatCompactMoney(openCapital),
-            sub: "Open positions",
-            color: "#3B82F6",
-          },
-          {
-            label: "Open Positions",
-            value: numberFormatter.format(openTrades.length),
-            sub: `${ratioFormatter.format(averageOpenAge)}d avg age`,
-            color: "#6C5DD3",
-          },
-        ].map((item) => (
-          <AppCard key={item.label}>
-            <div className="text-[11px] text-[#697386]">{item.label}</div>
-            <div
-              className="mt-1 truncate text-[20px] font-bold"
-              style={{ color: item.color }}
-            >
-              {item.value}
-            </div>
-            <div className="mt-0.5 text-[11px] text-[#697386]">{item.sub}</div>
-          </AppCard>
-        ))}
-      </div>
-
-      <div className="grid gap-3 xl:grid-cols-3">
-        <AppCard className="xl:col-span-2">
-          <SectionTitle>30-Day Performance</SectionTitle>
-          <EquityChart report={report} chart={equityChart} />
-        </AppCard>
-
-        <AppCard>
-          <SectionTitle>Symbol Allocation</SectionTitle>
-          <div className="space-y-2">
-            {allocation.length === 0 ? (
-              <div className="flex h-44 items-center justify-center text-sm text-[#697386]">
-                No allocation yet.
-              </div>
-            ) : (
-              allocation.map((item) => (
-                <div
-                  key={item.symbol}
-                  className="flex items-center justify-between text-[11px]"
-                >
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: item.color }}
-                    />
-                    <span className="truncate text-[#697386]">{item.symbol}</span>
-                  </div>
-                  <span className="font-medium text-[#171923]">
-                    {percentFormatter.format(item.percent)}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </AppCard>
-      </div>
-
-      <section className="overflow-hidden rounded-xl border border-[#E6E8EF] bg-white">
-        <div className="flex items-center border-b border-[#E6E8EF] px-4 py-3">
-          <h2 className="text-[13px] font-semibold text-[#171923]">
-            Open Positions
-          </h2>
-          <div className="ml-auto text-[12px] text-[#697386]">
-            {numberFormatter.format(openTrades.length)} positions ·{" "}
-            {formatMoney(openCapital)} deployed
-          </div>
-        </div>
-
-        {openTrades.length === 0 ? (
-          <div className="p-4">
-            <EmptyState
-              title="No open positions"
-              body="Trades without an exit price will appear here."
-            />
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px]">
-              <thead>
-                <tr className="border-b border-[#E6E8EF] bg-[#F7F8FA]">
-                  {["Symbol", "Side", "Qty", "Entry", "Exposure", "Age", "Notes", ""].map(
-                    (heading) => (
-                      <th
-                        key={heading}
-                        className="px-4 py-2 text-left text-[10px] font-medium text-[#697386]"
-                      >
-                        {heading}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {openTrades.map((trade) => (
-                  <tr
-                    key={trade.id}
-                    className="border-b border-[#E6E8EF] transition-colors hover:bg-[#F7F8FA]"
-                  >
-                    <td className="px-4 py-2.5">
-                      <div className="text-[13px] font-semibold text-[#171923]">
-                        {trade.symbol}
-                      </div>
-                      <div className="text-[10px] text-[#697386]">Open trade</div>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <DirectionPill side={trade.side} />
-                    </td>
-                    <td className="px-4 py-2.5 text-[12px] text-[#171923]">
-                      {numberFormatter.format(trade.quantity)}
-                    </td>
-                    <td className="px-4 py-2.5 text-[12px] text-[#697386]">
-                      {formatMoney(trade.entry)}
-                    </td>
-                    <td className="px-4 py-2.5 text-[12px] font-medium text-[#171923]">
-                      {formatMoney(getTradeNotional(trade))}
-                    </td>
-                    <td className="px-4 py-2.5 text-[12px] text-[#697386]">
-                      {numberFormatter.format(getOpenTradeAgeDays(trade, currentDate))}d
-                    </td>
-                    <td className="max-w-56 px-4 py-2.5 text-[11px] text-[#697386]">
-                      <div className="truncate">{trade.notes || "No note"}</div>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => onEdit(trade)}
-                        className="rounded-lg bg-[#6C5DD3]/10 px-2 py-0.5 text-[11px] font-medium text-[#6C5DD3]"
-                      >
-                        Log
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function WatchlistView({
-  trades,
-  currentDate,
-  onAddTrade,
-}: {
-  trades: TradeDto[];
-  currentDate: Date;
-  onAddTrade: () => void;
-}) {
-  const watchlistItems = useMemo(
-    () => buildWatchlistItems(trades, currentDate),
-    [currentDate, trades]
-  );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected =
-    watchlistItems.find((item) => item.id === selectedId) ?? watchlistItems[0] ?? null;
-
-  return (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-[#F7F8FA]">
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex items-center gap-3 border-b border-[#E6E8EF] bg-white px-5 py-3">
-          <div className="text-[13px] font-semibold text-[#171923]">Watchlist</div>
-          <div className="flex-1" />
-          <button
-            type="button"
-            onClick={onAddTrade}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-[#6C5DD3] px-3 text-[12px] font-medium text-white"
-          >
-            <Plus size={12} aria-hidden="true" />
-            Add Ticker
-          </button>
-        </div>
-
-        <div className="flex-1 space-y-2 overflow-auto p-4">
-          <div
-            className="grid border-b border-[#E6E8EF] px-3 pb-2 text-[10px] font-medium text-[#697386]"
-            style={{
-              gridTemplateColumns:
-                "minmax(100px,1.5fr) repeat(4,minmax(56px,1fr)) minmax(44px,0.6fr) minmax(100px,1.4fr) minmax(76px,1fr)",
-            }}
-          >
-            <div>Ticker</div>
-            <div className="text-right">Price</div>
-            <div className="text-right">Entry</div>
-            <div className="text-right">Stop</div>
-            <div className="text-right">Target</div>
-            <div className="text-right">R/R</div>
-            <div className="text-center">Confidence</div>
-            <div>Alert</div>
-          </div>
-
-          {watchlistItems.length === 0 ? (
-            <EmptyState
-              title="No watchlist rows"
-              body="Add trades to derive watchlist levels from your entries."
-            />
-          ) : (
-            watchlistItems.map((item) => {
-              const risk = Math.abs(item.price - item.stop) || 1;
-              const reward = Math.abs(item.target - item.price);
-              const rr = reward / risk;
-              const isSelected = selected?.id === item.id;
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSelectedId(item.id)}
-                  className="grid w-full cursor-pointer items-center rounded-xl px-3 py-2.5 text-left transition-all"
-                  style={{
-                    gridTemplateColumns:
-                      "minmax(100px,1.5fr) repeat(4,minmax(56px,1fr)) minmax(44px,0.6fr) minmax(100px,1.4fr) minmax(76px,1fr)",
-                    background: "#fff",
-                    border: `1px solid ${isSelected ? "#6C5DD3" : "#E6E8EF"}`,
-                    boxShadow: isSelected ? "0 0 0 1px rgba(108,93,211,0.3)" : "none",
-                  }}
-                >
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-[#171923]">
-                      {item.symbol}
-                    </div>
-                    <div className="truncate text-[10px] text-[#697386]">
-                      {item.name}
-                    </div>
-                  </div>
-                  <div className="text-right text-[12px] font-medium text-[#171923]">
-                    {formatMoney(item.price)}
-                  </div>
-                  <div className="text-right text-[12px] text-[#697386]">
-                    {formatMoney(item.targetEntry)}
-                  </div>
-                  <div className="text-right text-[12px] text-[#E25555]">
-                    {formatMoney(item.stop)}
-                  </div>
-                  <div className="text-right text-[12px] text-[#16A779]">
-                    {formatMoney(item.target)}
-                  </div>
-                  <div
-                    className="text-right text-[12px] font-medium"
-                    style={{ color: rr >= 2 ? "#16A779" : "#D99A20" }}
-                  >
-                    {ratioFormatter.format(rr)}x
-                  </div>
-                  <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-                    <div className="h-1.5 min-w-0 flex-1 rounded-full bg-[#E6E8EF]">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${item.confidence}%`,
-                          background:
-                            item.confidence >= 75
-                              ? "#16A779"
-                              : item.confidence >= 55
-                                ? "#D99A20"
-                                : "#E25555",
-                        }}
-                      />
-                    </div>
-                    <span className="shrink-0 whitespace-nowrap text-[10px] text-[#697386]">
-                      {ratioFormatter.format(item.confidence)}%
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <span
-                      className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        item.alertState === "Triggered"
-                          ? "bg-emerald-50 text-[#16A779]"
-                          : item.alertState === "Near Entry"
-                            ? "bg-amber-50 text-[#D99A20]"
-                            : "bg-[#F0F2F6] text-[#697386]"
-                      }`}
-                    >
-                      {item.alertState}
-                    </span>
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {selected ? (
-        <aside className="hidden w-[320px] shrink-0 flex-col overflow-y-auto border-l border-[#E6E8EF] bg-white lg:flex">
-          <div className="border-b border-[#E6E8EF] p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-[22px] font-bold text-[#171923]">
-                  {selected.symbol}
-                </div>
-                <div className="text-[12px] text-[#697386]">{selected.name}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#F7F8FA]">
-                  <Star size={13} color="#697386" aria-hidden="true" />
-                </button>
-                <button className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#F7F8FA]">
-                  <Bell size={13} color="#697386" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 text-[24px] font-bold text-[#171923]">
-              {formatMoney(selected.price)}
-            </div>
-          </div>
-
-          <div className="space-y-4 p-4">
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
-                Price Levels
-              </div>
-              <div className="space-y-2">
-                {[
-                  { label: "Target Entry", value: formatMoney(selected.targetEntry), color: "#6C5DD3" },
-                  { label: "Stop Loss", value: formatMoney(selected.stop), color: "#E25555" },
-                  { label: "Target Price", value: formatMoney(selected.target), color: "#16A779" },
-                  {
-                    label: "R/R Ratio",
-                    value: `${ratioFormatter.format(
-                      Math.abs(selected.target - selected.price) /
-                        (Math.abs(selected.price - selected.stop) || 1)
-                    )}x`,
-                    color: "#171923",
-                  },
-                ].map((row) => (
-                  <div key={row.label} className="flex justify-between text-[12px]">
-                    <span className="text-[#697386]">{row.label}</span>
-                    <span className="font-semibold" style={{ color: row.color }}>
-                      {row.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
-                Thesis
-              </div>
-              <div className="rounded-lg bg-[#F7F8FA] p-3 text-[12px] leading-6 text-[#171923]">
-                {selected.thesis}
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
-                Review Date
-              </div>
-              <div className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-medium text-[#D99A20]">
-                {selected.catalyst}
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
-                Tags
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {selected.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-lg bg-[#6C5DD3]/10 px-2 py-1 text-[11px] font-medium text-[#6C5DD3]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={onAddTrade}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#6C5DD3] py-2 text-[12px] font-medium text-white"
-            >
-              <Plus size={12} aria-hidden="true" />
-              Convert to Trade
-            </button>
-          </div>
-        </aside>
-      ) : null}
-    </div>
-  );
-}
-
-function OpenMonitorView({
-  trades,
-  currentDate,
-  onEdit,
-}: {
-  trades: TradeDto[];
-  currentDate: Date;
-  onEdit: (trade: TradeDto) => void;
-}) {
-  const openTrades = trades.filter((trade) => trade.exit === null);
-
-  if (openTrades.length === 0) {
-    return (
-      <div className="p-4 lg:p-5">
-        <EmptyState
-          title="No open trades"
-          body="Trades with no exit price will appear here for review."
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4 lg:p-5">
-      <div className="overflow-x-auto">
-        <div className="min-w-[920px] space-y-3">
-          <div className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.9fr_0.7fr_0.9fr_0.7fr] gap-3 px-4 text-[11px] font-semibold text-[#697386]">
-            <span>Symbol</span>
-            <span>Entry</span>
-            <span>Qty</span>
-            <span>Exposure</span>
-            <span>Age</span>
-            <span>Opened</span>
-            <span>Review</span>
-          </div>
-
-          {openTrades.map((trade, index) => {
-            const ageDays = getOpenTradeAgeDays(trade, currentDate);
-            const reviewScore = clampScore(100 - Math.min(ageDays * 2, 65));
-
-            return (
-              <div
-                key={trade.id}
-                className={`grid min-h-24 grid-cols-[1.4fr_0.8fr_0.7fr_0.9fr_0.7fr_0.9fr_0.7fr] items-center gap-3 rounded-lg border bg-white px-4 py-3 ${
-                  index === 0 ? "border-[#6C5DD3] shadow-[0_0_0_1px_#6C5DD3]" : "border-[#E6E8EF]"
-                }`}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-[14px] font-bold text-[#171923]">
-                    {trade.symbol}
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-[#697386]">
-                    {trade.notes || "No journal note"}
-                  </p>
-                </div>
-                <p className="text-[14px] font-semibold text-[#171923]">
-                  {formatMoney(trade.entry)}
-                </p>
-                <p className="text-[13px] text-[#697386]">
-                  {numberFormatter.format(trade.quantity)}
-                </p>
-                <p className="text-[13px] font-medium text-[#171923]">
-                  {formatCompactMoney(getTradeNotional(trade))}
-                </p>
-                <p className="text-[13px] text-[#697386]">
-                  {numberFormatter.format(ageDays)}d
-                </p>
-                <p className="text-[12px] text-[#697386]">
-                  {formatShortDate(trade.openedAt)}
-                </p>
-                <div>
-                  <div className="mb-1 flex items-center gap-2">
-                    <div className="h-1.5 w-16 rounded-full bg-[#EEF0F5]">
-                      <div
-                        className="h-1.5 rounded-full bg-[#16A779]"
-                        style={{ width: `${reviewScore}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-[#697386]">
-                      {ratioFormatter.format(reviewScore)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onEdit(trade)}
-                    className="rounded bg-[#6C5DD3]/10 px-2 py-1 text-[11px] font-medium text-[#6C5DD3]"
-                  >
-                    Update
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CalendarView({
-  calendar,
-  currentDate,
-  onCalendarMonthChange,
-}: {
-  calendar: ReturnType<typeof buildCalendarMonth>;
-  currentDate: Date;
-  onCalendarMonthChange: (updater: (current: Date) => Date) => void;
-}) {
-  return (
-    <div className="p-4 lg:p-5">
-      <section className="rounded-lg border border-[#E6E8EF] bg-white">
-        <div className="flex flex-col gap-3 border-b border-[#E6E8EF] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-[14px] font-semibold text-[#171923]">
-              {calendar.monthLabel}
-            </h2>
-            <p className="mt-1 text-[11px] text-[#697386]">
-              Realized P&L by activity date
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                onCalendarMonthChange((current) => addUtcMonths(current, -1))
-              }
-              className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] hover:bg-[#F7F8FA]"
-            >
-              Prev
-            </button>
-            <button
-              type="button"
-              onClick={() => onCalendarMonthChange(() => startOfUtcMonth(currentDate))}
-              className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] hover:bg-[#F7F8FA]"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onCalendarMonthChange((current) => addUtcMonths(current, 1))
-              }
-              className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] hover:bg-[#F7F8FA]"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto p-4">
-          <div className="grid min-w-[920px] grid-cols-[repeat(7,minmax(112px,1fr))_112px] gap-1">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <div
-                key={day}
-                className="rounded-md bg-[#F7F8FA] px-3 py-2 text-center text-[10px] font-semibold text-[#697386]"
-              >
-                {day}
-              </div>
-            ))}
-            <div className="rounded-md bg-[#F7F8FA] px-3 py-2 text-center text-[10px] font-semibold text-[#697386]">
-              Week
-            </div>
-
-            {calendar.weeks.map((week, weekIndex) => (
-              <div key={`week-${weekIndex}`} className="contents">
-                {week.days.map((day) => {
-                  const dayTone =
-                    day.pnl > 0 && day.isCurrentMonth
-                      ? "border-emerald-100 bg-emerald-50"
-                      : day.pnl < 0 && day.isCurrentMonth
-                        ? "border-red-100 bg-red-50"
-                        : day.isCurrentMonth
-                          ? "border-[#E6E8EF] bg-white"
-                          : "border-[#F1F3F7] bg-[#F7F8FA] text-[#A0A7B8]";
-
-                  return (
-                    <div
-                      key={day.dateKey}
-                      className={`flex min-h-28 flex-col rounded-md border p-3 ${dayTone}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-sm font-medium">{day.dayNumber}</span>
-                        {day.closedTrades > 0 ? (
-                          <span className="text-xs text-[#697386]">
-                            {formatPercent(day.winRate)}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {day.trades > 0 ? (
-                        <div className="mt-auto pt-3">
-                          <p
-                            className={`text-sm font-semibold ${getMetricValueClass(
-                              getMoneyTone(day.pnl)
-                            )}`}
-                          >
-                            {formatMoney(day.pnl)}
-                          </p>
-                          <p className="mt-1 text-xs text-[#697386]">
-                            {numberFormatter.format(day.trades)}{" "}
-                            {day.trades === 1 ? "trade" : "trades"}
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-
-                <div
-                  className={`flex min-h-28 flex-col justify-between rounded-md border p-3 ${
-                    week.summary.pnl > 0
-                      ? "border-emerald-100 bg-emerald-50"
-                      : week.summary.pnl < 0
-                        ? "border-red-100 bg-red-50"
-                        : "border-[#E6E8EF] bg-[#F7F8FA]"
-                  }`}
-                >
-                  <p className="text-[10px] font-semibold text-[#697386]">
-                    Week {weekIndex + 1}
-                  </p>
-                  {week.summary.activeDays > 0 ? (
-                    <div>
-                      <p
-                        className={`text-sm font-semibold ${getMetricValueClass(
-                          getMoneyTone(week.summary.pnl)
-                        )}`}
-                      >
-                        {formatMoney(week.summary.pnl)}
-                      </p>
-                      <p className="mt-1 text-xs text-[#697386]">
-                        {numberFormatter.format(week.summary.trades)} trades
-                      </p>
-                      <p className="mt-1 text-xs text-[#697386]">
-                        {numberFormatter.format(week.summary.activeDays)} active days
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-[#A0A7B8]">No activity</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
     </div>
   );
 }
@@ -2768,14 +2020,14 @@ function SettingsView({
               ["Base range", "All trades"],
               ["Calendar timezone", "UTC"],
               ["Date input", "24-hour supported"],
-              ["Risk display", "Position cost basis"],
+              ["Risk display", "P&L and return"],
             ],
           },
           {
             title: "Account",
             rows: [
               ["Provider", "Google"],
-              ["Workspace", "Main Portfolio"],
+              ["Workspace", "Futures Journal"],
               ["Access", "Private"],
               ["Sync", "Manual refresh"],
             ],
@@ -3093,7 +2345,7 @@ function TradeLogView({
                     tone: getMoneyTone(getTradeReturnPct(selectedTrade)),
                   },
                   {
-                    label: "Position Size",
+                    label: "Trade Size",
                     value: formatCompactMoney(getTradeNotional(selectedTrade)),
                     tone: "neutral" as const,
                   },
