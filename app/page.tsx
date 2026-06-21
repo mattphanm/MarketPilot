@@ -44,11 +44,11 @@ function SignInScreen() {
             MarketPilot
           </p>
           <h1 className="mt-3 text-2xl font-semibold tracking-normal">
-            Investor analytics
+            Futures trading journal
           </h1>
           <p className="mt-3 text-sm leading-6 text-[#C9C6DD]">
-            Sign in to review executions, analytics, open trades, and journal
-            notes in one private workspace.
+            Sign in to review completed trades, playbooks, analytics, and
+            journal entries in one private workspace.
           </p>
         </div>
 
