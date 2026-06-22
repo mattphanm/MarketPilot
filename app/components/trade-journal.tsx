@@ -35,6 +35,7 @@ import {
   type AnalyticsReport,
   type EquityPoint,
 } from "@/lib/analytics/report";
+import { buildPlaybookPerformance } from "@/lib/playbooks/performance";
 import type { PlaybookDto, PlaybookPayload } from "@/lib/playbooks/types";
 import {
   filterAndSortTradeLogRows,
@@ -106,12 +107,13 @@ type PlaybookSummary = {
   color: string;
   rules: string[];
   winRate: number | null;
-  avgReturn: number;
-  avgRMultiple: number;
+  averagePnl: number | null;
+  averageRMultiple: number | null;
   totalTrades: number;
-  avgHoldDays: number;
-  bestTrade: string;
-  worstTrade: string;
+  bestTrade: TradeDto | null;
+  bestTradePnl: number | null;
+  worstTrade: TradeDto | null;
+  worstTradePnl: number | null;
   trades: TradeDto[];
 };
 
@@ -336,6 +338,25 @@ function formatRatio(value: number | null) {
   return value === null ? "-" : ratioFormatter.format(value);
 }
 
+function formatSignedRatio(value: number | null) {
+  if (value === null) {
+    return "-";
+  }
+
+  return `${value > 0 ? "+" : ""}${ratioFormatter.format(value)}`;
+}
+
+function formatPlaybookTrade(
+  trade: TradeDto | null,
+  pnl: number | null
+) {
+  if (!trade || pnl === null) {
+    return "No trades";
+  }
+
+  return `${trade.symbol} ${formatMoney(pnl)}`;
+}
+
 function formatDate(iso: string | null) {
   if (!iso) {
     return "-";
@@ -408,17 +429,6 @@ function getDirectionLabel(side: TradeSide) {
 
 function getTradeRisk(trade: TradeDto) {
   return trade.riskDollars;
-}
-
-function getTradeRMultiple(trade: TradeDto) {
-  return trade.rMultiple;
-}
-
-function getTradeHoldDays(trade: TradeDto, now: Date) {
-  const openedAt = new Date(trade.openedAt).getTime();
-  const endedAt = now.getTime();
-
-  return Math.max(0, Math.ceil((endedAt - openedAt) / (24 * 60 * 60 * 1000)));
 }
 
 function clampScore(value: number) {
@@ -516,53 +526,24 @@ function buildSymbolAllocation(trades: TradeDto[]) {
 
 function buildPlaybooks(
   playbooks: PlaybookDto[],
-  trades: TradeDto[],
-  now: Date
+  trades: TradeDto[]
 ): PlaybookSummary[] {
-  return playbooks.map((playbook) => {
-    const assignedTrades = trades.filter((trade) => trade.playbookId === playbook.id);
-    const wins = assignedTrades.filter((trade) => getTradePnl(trade) > 0);
-    const sorted = [...assignedTrades].sort((a, b) => getTradePnl(b) - getTradePnl(a));
-    const averageReturn =
-      assignedTrades.length > 0
-        ? assignedTrades.reduce((total, trade) => total + getTradePnl(trade), 0) /
-          assignedTrades.length
-        : 0;
-    const averageRMultiple =
-      assignedTrades.length > 0
-        ? assignedTrades.reduce((total, trade) => total + getTradeRMultiple(trade), 0) /
-          assignedTrades.length
-        : 0;
-    const averageHoldDays =
-      assignedTrades.length > 0
-        ? assignedTrades.reduce(
-            (total, trade) => total + getTradeHoldDays(trade, now),
-            0
-          ) / assignedTrades.length
-        : 0;
-
-    return {
-      id: playbook.id,
-      name: playbook.name,
-      description: playbook.description,
-      color: playbook.color,
-      rules: playbook.rules,
-      trades: assignedTrades,
-      winRate: assignedTrades.length > 0 ? wins.length / assignedTrades.length : null,
-      avgReturn: averageReturn,
-      avgRMultiple: averageRMultiple,
-      totalTrades: assignedTrades.length,
-      avgHoldDays: averageHoldDays,
-      bestTrade: sorted[0]
-        ? `${sorted[0].symbol} ${formatMoney(getTradePnl(sorted[0]))}`
-        : "-",
-      worstTrade: sorted[sorted.length - 1]
-        ? `${sorted[sorted.length - 1].symbol} ${formatMoney(
-            getTradePnl(sorted[sorted.length - 1])
-          )}`
-        : "-",
-    };
-  });
+  return buildPlaybookPerformance(playbooks, trades).map((performance) => ({
+    id: performance.playbook.id,
+    name: performance.playbook.name,
+    description: performance.playbook.description,
+    color: performance.playbook.color,
+    rules: performance.playbook.rules,
+    trades: performance.trades,
+    winRate: performance.winRate,
+    averagePnl: performance.averagePnl,
+    averageRMultiple: performance.averageRMultiple,
+    totalTrades: performance.totalTrades,
+    bestTrade: performance.bestTrade,
+    bestTradePnl: performance.bestTradePnl,
+    worstTrade: performance.worstTrade,
+    worstTradePnl: performance.worstTradePnl,
+  }));
 }
 
 function formatIssue(issue: ApiIssue) {
@@ -1844,7 +1825,6 @@ const PLAYBOOK_COLORS = ["#6C5DD3", "#16A779", "#3B82F6", "#D99A20", "#E25555", 
 function PlaybooksView({
   storedPlaybooks,
   trades,
-  currentDate,
   form,
   editingPlaybook,
   saving,
@@ -1862,7 +1842,6 @@ function PlaybooksView({
 }: {
   storedPlaybooks: PlaybookDto[];
   trades: TradeDto[];
-  currentDate: Date;
   form: PlaybookFormState;
   editingPlaybook: PlaybookDto | null;
   saving: boolean;
@@ -1882,8 +1861,8 @@ function PlaybooksView({
   onLogTrade: (playbookId: string) => void;
 }) {
   const playbooks = useMemo(
-    () => buildPlaybooks(storedPlaybooks, trades, currentDate),
-    [currentDate, storedPlaybooks, trades]
+    () => buildPlaybooks(storedPlaybooks, trades),
+    [storedPlaybooks, trades]
   );
   const [selectedId, setSelectedId] = useState<string | null>(
     () => storedPlaybooks[0]?.id ?? null
@@ -2021,16 +2000,19 @@ function PlaybooksView({
                         color: winRatePct >= 65 ? "#16A779" : "#D99A20",
                       },
                       {
-                        label: "Avg Return",
-                        value: `${playbook.avgReturn >= 0 ? "+" : ""}${ratioFormatter.format(
-                          playbook.avgReturn
-                        )}%`,
-                        color: playbook.avgReturn >= 0 ? "#16A779" : "#E25555",
+                        label: "Avg P&L",
+                        value: formatOptionalMoney(playbook.averagePnl),
+                        color: getMetricValueClass(getMoneyTone(playbook.averagePnl)),
                       },
                       {
                         label: "Avg R",
-                        value: `${ratioFormatter.format(playbook.avgRMultiple)}R`,
-                        color: playbook.avgRMultiple >= 1 ? "#16A779" : "#D99A20",
+                        value:
+                          playbook.averageRMultiple === null
+                            ? "-"
+                            : `${formatSignedRatio(playbook.averageRMultiple)}R`,
+                        color: getMetricValueClass(
+                          getMoneyTone(playbook.averageRMultiple)
+                        ),
                       },
                       {
                         label: "Trades",
@@ -2048,10 +2030,10 @@ function PlaybooksView({
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-[#16A779]">
-                      Best: {playbook.bestTrade}
+                      Best: {formatPlaybookTrade(playbook.bestTrade, playbook.bestTradePnl)}
                     </span>
                     <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-medium text-[#E25555]">
-                      Worst: {playbook.worstTrade}
+                      Worst: {formatPlaybookTrade(playbook.worstTrade, playbook.worstTradePnl)}
                     </span>
                   </div>
                 </div>
@@ -2252,14 +2234,19 @@ function PlaybooksView({
                     color: winRatePct >= 65 ? "#16A779" : "#D99A20",
                   },
                   {
-                    label: "Avg Return",
-                    value: `${selected.avgReturn >= 0 ? "+" : ""}${ratioFormatter.format(selected.avgReturn)}%`,
-                    color: selected.avgReturn >= 0 ? "#16A779" : "#E25555",
+                    label: "Avg P&L",
+                    value: formatOptionalMoney(selected.averagePnl),
+                    color: getMetricValueClass(getMoneyTone(selected.averagePnl)),
                   },
                   {
                     label: "Avg R Multiple",
-                    value: `${ratioFormatter.format(selected.avgRMultiple)}R`,
-                    color: selected.avgRMultiple >= 1.5 ? "#16A779" : "#D99A20",
+                    value:
+                      selected.averageRMultiple === null
+                        ? "-"
+                        : `${formatSignedRatio(selected.averageRMultiple)}R`,
+                    color: getMetricValueClass(
+                      getMoneyTone(selected.averageRMultiple)
+                    ),
                   },
                   {
                     label: "Total Trades",
@@ -2332,11 +2319,15 @@ function PlaybooksView({
               <div className="space-y-2">
                 <div className="flex justify-between text-[12px]">
                   <span className="text-[#697386]">Best Trade</span>
-                  <span className="font-semibold text-[#16A779]">{selected.bestTrade}</span>
+                  <span className="font-semibold text-[#16A779]">
+                    {formatPlaybookTrade(selected.bestTrade, selected.bestTradePnl)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-[12px]">
                   <span className="text-[#697386]">Worst Trade</span>
-                  <span className="font-semibold text-[#E25555]">{selected.worstTrade}</span>
+                  <span className="font-semibold text-[#E25555]">
+                    {formatPlaybookTrade(selected.worstTrade, selected.worstTradePnl)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -4029,7 +4020,6 @@ export default function TradeJournal({
             <PlaybooksView
               storedPlaybooks={playbooks}
               trades={trades}
-              currentDate={currentDate}
               form={playbookForm}
               editingPlaybook={editingPlaybook}
               saving={playbookSaving}
