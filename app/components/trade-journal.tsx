@@ -1728,50 +1728,50 @@ function PlaybooksView({
             ) : null}
 
             <form
-              className="mt-4 grid gap-3 lg:grid-cols-[minmax(180px,0.8fr)_minmax(220px,1fr)_120px]"
+              className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,120px)]"
               onSubmit={onSubmit}
             >
-              <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565]">
                 Name
                 <input
                   value={form.name}
                   onChange={(event) => onUpdateForm("name", event.target.value)}
-                  className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  className="h-10 w-full min-w-0 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                   maxLength={80}
                   disabled={saving}
                 />
               </label>
 
-              <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565]">
                 Description
                 <input
                   value={form.description}
                   onChange={(event) =>
                     onUpdateForm("description", event.target.value)
                   }
-                  className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  className="h-10 w-full min-w-0 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                   maxLength={500}
                   disabled={saving}
                 />
               </label>
 
-              <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565]">
                 Color
                 <input
                   value={form.color}
                   onChange={(event) => onUpdateForm("color", event.target.value)}
-                  className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm font-semibold text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  className="h-10 w-full min-w-0 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm font-semibold text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                   maxLength={7}
                   disabled={saving}
                 />
               </label>
 
-              <label className="grid gap-1 text-sm font-medium text-[#4B5565] lg:col-span-3">
+              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565] lg:col-span-3">
                 Playbook Rules
                 <textarea
                   value={form.rules}
                   onChange={(event) => onUpdateForm("rules", event.target.value)}
-                  className="min-h-28 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  className="min-h-28 w-full min-w-0 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                   placeholder="One Playbook Rule per line"
                   disabled={saving}
                 />
@@ -2541,10 +2541,18 @@ function TradeFormView({
   form,
   editingTrade,
   saving,
+  inlinePlaybookOpen,
+  inlinePlaybookForm,
+  inlinePlaybookSaving,
+  inlinePlaybookError,
   error,
   trades,
   playbooks,
   onUpdateForm,
+  onUpdateInlinePlaybookForm,
+  onOpenInlinePlaybook,
+  onCancelInlinePlaybook,
+  onSubmitInlinePlaybook,
   onSubmit,
   onReset,
   onEdit,
@@ -2552,6 +2560,10 @@ function TradeFormView({
   form: TradeFormState;
   editingTrade: TradeDto | null;
   saving: boolean;
+  inlinePlaybookOpen: boolean;
+  inlinePlaybookForm: PlaybookFormState;
+  inlinePlaybookSaving: boolean;
+  inlinePlaybookError: string | null;
   error: string | null;
   trades: TradeDto[];
   playbooks: PlaybookDto[];
@@ -2559,6 +2571,13 @@ function TradeFormView({
     key: Key,
     value: TradeFormState[Key]
   ) => void;
+  onUpdateInlinePlaybookForm: <Key extends keyof PlaybookFormState>(
+    key: Key,
+    value: PlaybookFormState[Key]
+  ) => void;
+  onOpenInlinePlaybook: () => void;
+  onCancelInlinePlaybook: () => void;
+  onSubmitInlinePlaybook: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onReset: () => void;
   onEdit: (trade: TradeDto) => void;
@@ -2602,22 +2621,146 @@ function TradeFormView({
         ) : null}
 
         <form className="mt-4 grid gap-3" onSubmit={onSubmit}>
-          <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
-            Playbook
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="trade-playbook"
+                className="text-sm font-medium text-[#4B5565]"
+              >
+                Playbook
+              </label>
+              <button
+                type="button"
+                onClick={onOpenInlinePlaybook}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#D7DAE2] bg-white px-2.5 text-xs font-semibold text-[#4B5565] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+                disabled={saving || inlinePlaybookSaving}
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                New Playbook
+              </button>
+            </div>
+
             <select
+              id="trade-playbook"
               value={form.playbookId}
               onChange={(event) => onUpdateForm("playbookId", event.target.value)}
               className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-              disabled={saving}
+              disabled={saving || inlinePlaybookSaving}
             >
-              <option value="">Select a Playbook</option>
+              <option value="">
+                {playbooks.length === 0
+                  ? "Create a Playbook to continue"
+                  : "Select a Playbook"}
+              </option>
               {playbooks.map((playbook) => (
                 <option key={playbook.id} value={playbook.id}>
                   {playbook.name}
                 </option>
               ))}
             </select>
-          </label>
+
+            {inlinePlaybookOpen ? (
+              <div
+                className="mt-1 grid gap-3 rounded-lg border border-[#D7DAE2] bg-[#FBFCFD] p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#171923]">
+                      New Playbook
+                    </h3>
+                    <p className="mt-1 text-[11px] font-normal text-[#697386]">
+                      Created Playbooks are selected for this trade.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCancelInlinePlaybook}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#E6E8EF] bg-white text-[#697386] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+                    disabled={inlinePlaybookSaving}
+                    aria-label="Cancel new Playbook"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+
+                {inlinePlaybookError ? (
+                  <p
+                    role="alert"
+                    className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-normal text-red-700"
+                  >
+                    {inlinePlaybookError}
+                  </p>
+                ) : null}
+
+                <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+                  Name
+                  <input
+                    value={inlinePlaybookForm.name}
+                    onChange={(event) =>
+                      onUpdateInlinePlaybookForm("name", event.target.value)
+                    }
+                    className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                    placeholder="Opening range breakout"
+                    maxLength={80}
+                    disabled={inlinePlaybookSaving}
+                  />
+                </label>
+
+                <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+                  Description
+                  <textarea
+                    value={inlinePlaybookForm.description}
+                    onChange={(event) =>
+                      onUpdateInlinePlaybookForm(
+                        "description",
+                        event.target.value
+                      )
+                    }
+                    className="min-h-20 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                    maxLength={500}
+                    disabled={inlinePlaybookSaving}
+                  />
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)]">
+                  <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+                    Color
+                    <input
+                      value={inlinePlaybookForm.color}
+                      onChange={(event) =>
+                        onUpdateInlinePlaybookForm("color", event.target.value)
+                      }
+                      className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                      maxLength={7}
+                      disabled={inlinePlaybookSaving}
+                    />
+                  </label>
+
+                  <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+                    Rules
+                    <textarea
+                      value={inlinePlaybookForm.rules}
+                      onChange={(event) =>
+                        onUpdateInlinePlaybookForm("rules", event.target.value)
+                      }
+                      className="min-h-24 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                      placeholder="One Playbook Rule per line"
+                      disabled={inlinePlaybookSaving}
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onSubmitInlinePlaybook}
+                  disabled={inlinePlaybookSaving}
+                  className="h-9 rounded-md bg-[#171923] px-3 text-sm font-semibold text-white transition hover:bg-[#2D3748] focus:outline-none focus:ring-2 focus:ring-[#171923] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#A0A7B8]"
+                >
+                  {inlinePlaybookSaving ? "Creating..." : "Create and select"}
+                </button>
+              </div>
+            ) : null}
+          </div>
 
           <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
             Symbol
@@ -2793,6 +2936,9 @@ export default function TradeJournal({
   const [playbookForm, setPlaybookForm] = useState<PlaybookFormState>(() =>
     createEmptyPlaybookForm()
   );
+  const [inlinePlaybookOpen, setInlinePlaybookOpen] = useState(false);
+  const [inlinePlaybookForm, setInlinePlaybookForm] =
+    useState<PlaybookFormState>(() => createEmptyPlaybookForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingPlaybookId, setEditingPlaybookId] = useState<string | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
@@ -2804,8 +2950,12 @@ export default function TradeJournal({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playbookSaving, setPlaybookSaving] = useState(false);
+  const [inlinePlaybookSaving, setInlinePlaybookSaving] = useState(false);
   const [deletingPlaybookId, setDeletingPlaybookId] = useState<string | null>(null);
   const [playbookError, setPlaybookError] = useState<string | null>(null);
+  const [inlinePlaybookError, setInlinePlaybookError] = useState<string | null>(
+    null
+  );
   const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
   const displayName = userName || userEmail || "Authenticated trader";
 
@@ -2878,6 +3028,13 @@ export default function TradeJournal({
     setPlaybookForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updateInlinePlaybookForm<Key extends keyof PlaybookFormState>(
+    key: Key,
+    value: PlaybookFormState[Key]
+  ) {
+    setInlinePlaybookForm((current) => ({ ...current, [key]: value }));
+  }
+
   function resetForm() {
     setEditingId(null);
     setForm(createEmptyForm(nowIso));
@@ -2900,6 +3057,17 @@ export default function TradeJournal({
     setEditingPlaybookId(null);
     setPlaybookForm(createEmptyPlaybookForm());
     setPlaybookError(null);
+  }
+
+  function openInlinePlaybook() {
+    setInlinePlaybookOpen(true);
+    setInlinePlaybookError(null);
+  }
+
+  function resetInlinePlaybookForm() {
+    setInlinePlaybookOpen(false);
+    setInlinePlaybookForm(createEmptyPlaybookForm());
+    setInlinePlaybookError(null);
   }
 
   function openNewPlaybook() {
@@ -2963,6 +3131,47 @@ export default function TradeJournal({
       );
     } finally {
       setPlaybookSaving(false);
+    }
+  }
+
+  async function handleInlinePlaybookSubmit() {
+    setInlinePlaybookError(null);
+
+    const result = buildPlaybookPayload(inlinePlaybookForm);
+
+    if (result.error) {
+      setInlinePlaybookError(result.error);
+      return;
+    }
+
+    setInlinePlaybookSaving(true);
+
+    try {
+      const response = await fetch("/api/playbooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result.payload),
+      });
+      const body = await readApiBody(response);
+
+      if (!response.ok || !body?.playbook) {
+        throw new Error(
+          formatApiError(body, "Unable to create this Playbook. Try again.")
+        );
+      }
+
+      const nextPlaybook = normalizePlaybook(body.playbook);
+      setPlaybooks((current) => sortPlaybooks([...current, nextPlaybook]));
+      setForm((current) => ({ ...current, playbookId: nextPlaybook.id }));
+      resetInlinePlaybookForm();
+    } catch (caught) {
+      setInlinePlaybookError(
+        caught instanceof Error
+          ? caught.message
+          : "Unable to create this Playbook. Try again."
+      );
+    } finally {
+      setInlinePlaybookSaving(false);
     }
   }
 
@@ -3185,10 +3394,18 @@ export default function TradeJournal({
               form={form}
               editingTrade={editingTrade}
               saving={saving}
+              inlinePlaybookOpen={inlinePlaybookOpen}
+              inlinePlaybookForm={inlinePlaybookForm}
+              inlinePlaybookSaving={inlinePlaybookSaving}
+              inlinePlaybookError={inlinePlaybookError}
               error={error}
               trades={trades}
               playbooks={playbooks}
               onUpdateForm={updateForm}
+              onUpdateInlinePlaybookForm={updateInlinePlaybookForm}
+              onOpenInlinePlaybook={openInlinePlaybook}
+              onCancelInlinePlaybook={resetInlinePlaybookForm}
+              onSubmitInlinePlaybook={handleInlinePlaybookSubmit}
               onSubmit={handleSubmit}
               onReset={resetForm}
               onEdit={startEdit}
