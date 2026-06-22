@@ -723,10 +723,12 @@ function DirectionPill({ side }: { side: TradeSide }) {
 function TradeDetailDrawer({
   trade,
   playbook,
+  onEdit,
   onClose,
 }: {
   trade: TradeDto;
   playbook: PlaybookDto | null;
+  onEdit: (trade: TradeDto) => void;
   onClose: () => void;
 }) {
   const pnl = getTradePnl(trade);
@@ -769,14 +771,24 @@ function TradeDetailDrawer({
               <StatusPill trade={trade} />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close trade detail drawer"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#E6E8EF] text-[#697386] transition hover:bg-[#F7F8FA] hover:text-[#171923]"
-          >
-            <X size={15} aria-hidden="true" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onEdit(trade)}
+              aria-label={`Edit ${trade.symbol} trade`}
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E6E8EF] text-[#697386] transition hover:bg-[#F7F8FA] hover:text-[#171923] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+            >
+              <Edit3 size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close trade detail drawer"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E6E8EF] text-[#697386] transition hover:bg-[#F7F8FA] hover:text-[#171923] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -2653,6 +2665,7 @@ function TradeLogView({
         <TradeDetailDrawer
           trade={selectedTrade}
           playbook={selectedPlaybook}
+          onEdit={onEdit}
           onClose={() => onSelectTrade(null)}
         />
       ) : null}
