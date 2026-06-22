@@ -2,6 +2,7 @@ export type TradeSide = "buy" | "sell";
 
 export type TradeDto = {
   id: string;
+  playbookId: string | null;
   symbol: string;
   side: TradeSide;
   entry: number;

@@ -2,10 +2,12 @@ import { signInWithGoogle } from "@/app/actions/auth";
 import TradeJournal from "@/app/components/trade-journal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import type { PlaybookDto } from "@/lib/playbooks/types";
 import type { TradeDto } from "@/lib/trades/types";
 
 function serializeTrade(trade: {
   id: string;
+  playbookId: string | null;
   symbol: string;
   side: string;
   entry: number;
@@ -19,6 +21,7 @@ function serializeTrade(trade: {
 }): TradeDto {
   return {
     id: trade.id,
+    playbookId: trade.playbookId,
     symbol: trade.symbol,
     side: trade.side as TradeDto["side"],
     entry: trade.entry,
@@ -29,6 +32,26 @@ function serializeTrade(trade: {
     notes: trade.notes,
     createdAt: trade.createdAt.toISOString(),
     updatedAt: trade.updatedAt.toISOString(),
+  };
+}
+
+function serializePlaybook(playbook: {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  rules: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}): PlaybookDto {
+  return {
+    id: playbook.id,
+    name: playbook.name,
+    description: playbook.description,
+    color: playbook.color,
+    rules: playbook.rules,
+    createdAt: playbook.createdAt.toISOString(),
+    updatedAt: playbook.updatedAt.toISOString(),
   };
 }
 
@@ -78,6 +101,7 @@ export default async function Home() {
     orderBy: [{ openedAt: "desc" }, { createdAt: "desc" }],
     select: {
       id: true,
+      playbookId: true,
       symbol: true,
       side: true,
       entry: true,
@@ -90,14 +114,29 @@ export default async function Home() {
       updatedAt: true,
     },
   });
+  const playbooks = await prisma.playbook.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      color: true,
+      rules: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
 
   const serializedTrades = trades.map(serializeTrade);
+  const serializedPlaybooks = playbooks.map(serializePlaybook);
   const displayName =
     session.user?.name ?? session.user?.email ?? "Authenticated trader";
 
   return (
     <TradeJournal
       initialTrades={serializedTrades}
+      initialPlaybooks={serializedPlaybooks}
       userName={displayName}
       userEmail={session.user?.email}
       nowIso={new Date().toISOString()}

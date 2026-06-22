@@ -28,10 +28,12 @@ import {
   type AnalyticsReport,
   type EquityPoint,
 } from "@/lib/analytics/report";
+import type { PlaybookDto, PlaybookPayload } from "@/lib/playbooks/types";
 import type { TradeDto, TradePayload, TradeSide } from "@/lib/trades/types";
 
 type TradeJournalProps = {
   initialTrades: TradeDto[];
+  initialPlaybooks: PlaybookDto[];
   userName?: string | null;
   userEmail?: string | null;
   nowIso: string;
@@ -56,6 +58,13 @@ type TradeFormState = {
   notes: string;
 };
 
+type PlaybookFormState = {
+  name: string;
+  description: string;
+  color: string;
+  rules: string;
+};
+
 type ApiIssue = {
   path?: Array<string | number>;
   message?: string;
@@ -63,6 +72,7 @@ type ApiIssue = {
 
 type ApiTradeBody = {
   trade?: TradeDto;
+  playbook?: PlaybookDto;
   error?: string;
   issues?: ApiIssue[];
 };
@@ -73,6 +83,7 @@ type PlaybookSummary = {
   id: string;
   name: string;
   description: string;
+  color: string;
   rules: string[];
   winRate: number | null;
   avgReturn: number;
@@ -187,13 +198,41 @@ function tradeToForm(trade: TradeDto): TradeFormState {
   };
 }
 
+function createEmptyPlaybookForm(): PlaybookFormState {
+  return {
+    name: "",
+    description: "",
+    color: "#6C5DD3",
+    rules: "",
+  };
+}
+
+function playbookToForm(playbook: PlaybookDto): PlaybookFormState {
+  return {
+    name: playbook.name,
+    description: playbook.description,
+    color: playbook.color,
+    rules: playbook.rules.join("\n"),
+  };
+}
+
 function normalizeTrade(trade: TradeDto): TradeDto {
   return {
     ...trade,
+    playbookId: trade.playbookId ?? null,
     openedAt: new Date(trade.openedAt).toISOString(),
     closedAt: trade.closedAt ? new Date(trade.closedAt).toISOString() : null,
     createdAt: new Date(trade.createdAt).toISOString(),
     updatedAt: new Date(trade.updatedAt).toISOString(),
+  };
+}
+
+function normalizePlaybook(playbook: PlaybookDto): PlaybookDto {
+  return {
+    ...playbook,
+    color: playbook.color.toUpperCase(),
+    createdAt: new Date(playbook.createdAt).toISOString(),
+    updatedAt: new Date(playbook.updatedAt).toISOString(),
   };
 }
 
@@ -208,6 +247,12 @@ function sortTrades(trades: TradeDto[]) {
 
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
+}
+
+function sortPlaybooks(playbooks: PlaybookDto[]) {
+  return [...playbooks].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
 }
 
 function formatMoney(value: number) {
@@ -530,87 +575,55 @@ function buildReturnDistribution(trades: TradeDto[]) {
   return buckets;
 }
 
-function buildPlaybooks(trades: TradeDto[], now: Date): PlaybookSummary[] {
-  const candidates: Array<{
-    id: string;
-    name: string;
-    description: string;
-    rules: string[];
-    trades: TradeDto[];
-  }> = [
-    {
-      id: "long",
-      name: "Long Bias",
-      description: "Trades opened from the buy side with thesis notes and managed exits.",
-      rules: [
-        "Entry has a written thesis",
-        "Exit price is captured for review",
-        "Risk is defined before entry",
-      ],
-      trades: trades.filter((trade) => trade.side === "buy"),
-    },
-    {
-      id: "short",
-      name: "Short / Hedge",
-      description: "Sell-side trades used for downside exposure or tactical hedging.",
-      rules: [
-        "Risk is capped before entry",
-        "Target is defined before the trade is closed",
-        "Review happens within the same week",
-      ],
-      trades: trades.filter((trade) => trade.side === "sell"),
-    },
-    {
-      id: "open-review",
-      name: "Open Trade Review",
-      description: "Trades that still need exit decisions and updated notes.",
-      rules: [
-        "Review open trades daily",
-        "Update notes when thesis changes",
-        "Close the loop with an exit and post-mortem",
-      ],
-      trades: trades.filter((trade) => trade.exit === null),
-    },
-  ];
+function buildPlaybooks(
+  playbooks: PlaybookDto[],
+  trades: TradeDto[],
+  now: Date
+): PlaybookSummary[] {
+  return playbooks.map((playbook) => {
+    const assignedTrades = trades.filter((trade) => trade.playbookId === playbook.id);
+    const closed = assignedTrades.filter((trade) => trade.exit !== null);
+    const wins = closed.filter((trade) => (getTradePnl(trade) ?? 0) > 0);
+    const returns = closed
+      .map(getTradeReturnPct)
+      .filter((returnPct): returnPct is number => returnPct !== null);
+    const sorted = [...closed].sort(
+      (a, b) => (getTradePnl(b) ?? 0) - (getTradePnl(a) ?? 0)
+    );
+    const averageReturn =
+      returns.length > 0
+        ? (returns.reduce((total, value) => total + value, 0) / returns.length) * 100
+        : 0;
+    const averageHoldDays =
+      assignedTrades.length > 0
+        ? assignedTrades.reduce(
+            (total, trade) => total + getTradeHoldDays(trade, now),
+            0
+          ) / assignedTrades.length
+        : 0;
 
-  return candidates
-    .filter((candidate) => candidate.trades.length > 0)
-    .map((candidate) => {
-      const closed = candidate.trades.filter((trade) => trade.exit !== null);
-      const wins = closed.filter((trade) => (getTradePnl(trade) ?? 0) > 0);
-      const returns = closed
-        .map(getTradeReturnPct)
-        .filter((returnPct): returnPct is number => returnPct !== null);
-      const sorted = [...closed].sort(
-        (a, b) => (getTradePnl(b) ?? 0) - (getTradePnl(a) ?? 0)
-      );
-      const averageReturn =
-        returns.length > 0
-          ? (returns.reduce((total, value) => total + value, 0) / returns.length) * 100
-          : 0;
-      const averageHoldDays =
-        candidate.trades.reduce(
-          (total, trade) => total + getTradeHoldDays(trade, now),
-          0
-        ) / candidate.trades.length;
-
-      return {
-        ...candidate,
-        winRate: closed.length > 0 ? wins.length / closed.length : null,
-        avgReturn: averageReturn,
-        avgRMultiple: averageReturn / 5,
-        totalTrades: candidate.trades.length,
-        avgHoldDays: averageHoldDays,
-        bestTrade: sorted[0]
-          ? `${sorted[0].symbol} ${formatMoney(getTradePnl(sorted[0]) ?? 0)}`
-          : "Open",
-        worstTrade: sorted[sorted.length - 1]
-          ? `${sorted[sorted.length - 1].symbol} ${formatMoney(
-              getTradePnl(sorted[sorted.length - 1]) ?? 0
-            )}`
-          : "Open",
-      };
-    });
+    return {
+      id: playbook.id,
+      name: playbook.name,
+      description: playbook.description,
+      color: playbook.color,
+      rules: playbook.rules,
+      trades: assignedTrades,
+      winRate: closed.length > 0 ? wins.length / closed.length : null,
+      avgReturn: averageReturn,
+      avgRMultiple: averageReturn / 5,
+      totalTrades: assignedTrades.length,
+      avgHoldDays: averageHoldDays,
+      bestTrade: sorted[0]
+        ? `${sorted[0].symbol} ${formatMoney(getTradePnl(sorted[0]) ?? 0)}`
+        : "-",
+      worstTrade: sorted[sorted.length - 1]
+        ? `${sorted[sorted.length - 1].symbol} ${formatMoney(
+            getTradePnl(sorted[sorted.length - 1]) ?? 0
+          )}`
+        : "-",
+    };
+  });
 }
 
 function formatIssue(issue: ApiIssue) {

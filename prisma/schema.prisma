@@ -19,6 +19,7 @@ model User {
   emailVerified DateTime?
   image         String?
   accounts      Account[]
+  playbooks     Playbook[]
   sessions      Session[]
   trades        Trade[]
 }
@@ -58,6 +59,7 @@ model VerificationToken {
 model Trade {
   id        String   @id @default(cuid())
   userId    String
+  playbookId String?
   symbol    String
   side      String
   entry     Float
@@ -68,7 +70,24 @@ model Trade {
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  playbook  Playbook? @relation(fields: [playbookId], references: [id], onDelete: Restrict)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, openedAt])
+  @@index([userId, playbookId])
+}
+
+model Playbook {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String
+  color       String
+  rules       String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  trades      Trade[]
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
