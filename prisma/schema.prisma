@@ -19,6 +19,7 @@ model User {
   emailVerified DateTime?
   image         String?
   accounts      Account[]
+  journalEntries JournalEntry[]
   playbooks     Playbook[]
   sessions      Session[]
   trades        Trade[]
@@ -62,19 +63,31 @@ model Trade {
   playbookId String?
   symbol    String
   side      String
-  entry     Float
-  exit      Float?
-  quantity  Int
+  riskDollars Float   @default(1)
+  rMultiple Float    @default(0)
   openedAt  DateTime
-  closedAt  DateTime?
-  notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  journalEntry JournalEntry?
   playbook  Playbook? @relation(fields: [playbookId], references: [id], onDelete: Restrict)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, openedAt])
   @@index([userId, playbookId])
+}
+
+model JournalEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  tradeId     String   @unique
+  tradeIdea   String
+  confluences String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  trade       Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model Playbook {

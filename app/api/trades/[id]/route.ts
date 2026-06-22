@@ -25,6 +25,7 @@ export async function GET(_request: Request, context: RouteContext) {
       id,
       userId: user.userId,
     },
+    include: { journalEntry: true },
   });
 
   if (!trade) {
@@ -37,7 +38,7 @@ export async function GET(_request: Request, context: RouteContext) {
 /**
  * Update one trade by id for the current user.
  * Requires authentication, accepts partial validated fields, verifies ownership
- * inside a transaction, checks the final date range, and returns the refreshed trade.
+ * inside a transaction, and returns the refreshed trade with journal context.
  */
 export async function PATCH(request: Request, context: RouteContext) {
   const user = await requireUser();
@@ -65,24 +66,32 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const { openedAt, closedAt, ...tradeData } = result.data;
+  const { openedAt, tradeIdea, confluences, playbookId, ...tradeData } = result.data;
   const updateResult = await prisma.$transaction(async (tx) => {
     const existingTrade = await tx.trade.findFirst({
       where: {
         id,
         userId: user.userId,
       },
+      include: { journalEntry: true },
     });
 
     if (!existingTrade) {
       return { status: "notFound" as const };
     }
 
-    const nextOpenedAt = openedAt ? new Date(openedAt) : existingTrade.openedAt;
-    const nextClosedAt = closedAt ? new Date(closedAt) : existingTrade.closedAt;
+    if (playbookId) {
+      const playbook = await tx.playbook.findFirst({
+        where: {
+          id: playbookId,
+          userId: user.userId,
+        },
+        select: { id: true },
+      });
 
-    if (nextClosedAt && nextClosedAt < nextOpenedAt) {
-      return { status: "invalidDateRange" as const };
+      if (!playbook) {
+        return { status: "invalidPlaybook" as const };
+      }
     }
 
     const { count } = await tx.trade.updateMany({
@@ -92,8 +101,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       },
       data: {
         ...tradeData,
+        ...(playbookId ? { playbookId } : {}),
         ...(openedAt ? { openedAt: new Date(openedAt) } : {}),
-        ...(closedAt ? { closedAt: new Date(closedAt) } : {}),
       },
     });
 
@@ -101,11 +110,29 @@ export async function PATCH(request: Request, context: RouteContext) {
       return { status: "notFound" as const };
     }
 
+    if (tradeIdea !== undefined || confluences !== undefined) {
+      await tx.journalEntry.upsert({
+        where: { tradeId: id },
+        update: {
+          ...(tradeIdea !== undefined ? { tradeIdea } : {}),
+          ...(confluences !== undefined ? { confluences } : {}),
+          userId: user.userId,
+        },
+        create: {
+          tradeId: id,
+          userId: user.userId,
+          tradeIdea: tradeIdea ?? existingTrade.journalEntry?.tradeIdea ?? "",
+          confluences: confluences ?? existingTrade.journalEntry?.confluences ?? "",
+        },
+      });
+    }
+
     const trade = await tx.trade.findFirst({
       where: {
         id,
         userId: user.userId,
       },
+      include: { journalEntry: true },
     });
 
     return trade
@@ -117,11 +144,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Trade not found" }, { status: 404 });
   }
 
-  if (updateResult.status === "invalidDateRange") {
+  if (updateResult.status === "invalidPlaybook") {
     return NextResponse.json(
       {
         error: "Invalid trade input",
-        issues: [{ path: ["closedAt"], message: "closedAt must be after openedAt" }],
+        issues: [{ path: ["playbookId"], message: "Playbook not found" }],
       },
       { status: 400 }
     );

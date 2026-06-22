@@ -1,27 +1,34 @@
-export type TradeSide = "buy" | "sell";
+export type TradeSide = "long" | "short";
 
-export type TradeDto = {
+export type JournalEntryDto = {
   id: string;
-  playbookId: string | null;
-  symbol: string;
-  side: TradeSide;
-  entry: number;
-  exit: number | null;
-  quantity: number;
-  openedAt: string;
-  closedAt: string | null;
-  notes: string | null;
+  tradeId: string;
+  tradeIdea: string;
+  confluences: string;
   createdAt: string;
   updatedAt: string;
 };
 
-export type TradePayload = {
+export type TradeDto = {
+  id: string;
+  playbookId: string;
   symbol: string;
   side: TradeSide;
-  entry: number;
-  exit?: number;
-  quantity: number;
+  riskDollars: number;
+  rMultiple: number;
   openedAt: string;
-  closedAt?: string;
-  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  journalEntry: JournalEntryDto | null;
+};
+
+export type TradePayload = {
+  playbookId: string;
+  symbol: string;
+  side: TradeSide;
+  riskDollars: number;
+  rMultiple: number;
+  openedAt: string;
+  tradeIdea: string;
+  confluences: string;
 };

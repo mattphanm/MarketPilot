@@ -51,14 +51,14 @@ type DashboardView =
   | "settings";
 
 type TradeFormState = {
+  playbookId: string;
   symbol: string;
   side: TradeSide;
-  quantity: string;
-  entry: string;
-  exit: string;
   openedAt: string;
-  closedAt: string;
-  notes: string;
+  riskDollars: string;
+  rMultiple: string;
+  tradeIdea: string;
+  confluences: string;
 };
 
 type PlaybookFormState = {
@@ -177,27 +177,27 @@ const allocationColors = ["#6C5DD3", "#16A779", "#3B82F6", "#D99A20", "#E25555"]
 
 function createEmptyForm(nowIso: string): TradeFormState {
   return {
+    playbookId: "",
     symbol: "",
-    side: "buy",
-    quantity: "",
-    entry: "",
-    exit: "",
+    side: "long",
     openedAt: formatTradeDateInput(nowIso),
-    closedAt: "",
-    notes: "",
+    riskDollars: "",
+    rMultiple: "",
+    tradeIdea: "",
+    confluences: "",
   };
 }
 
 function tradeToForm(trade: TradeDto): TradeFormState {
   return {
+    playbookId: trade.playbookId,
     symbol: trade.symbol,
     side: trade.side,
-    quantity: String(trade.quantity),
-    entry: String(trade.entry),
-    exit: trade.exit === null ? "" : String(trade.exit),
     openedAt: formatTradeDateInput(trade.openedAt),
-    closedAt: formatTradeDateInput(trade.closedAt),
-    notes: trade.notes ?? "",
+    riskDollars: String(trade.riskDollars),
+    rMultiple: String(trade.rMultiple),
+    tradeIdea: trade.journalEntry?.tradeIdea ?? "",
+    confluences: trade.journalEntry?.confluences ?? "",
   };
 }
 
@@ -222,11 +222,17 @@ function playbookToForm(playbook: PlaybookDto): PlaybookFormState {
 function normalizeTrade(trade: TradeDto): TradeDto {
   return {
     ...trade,
-    playbookId: trade.playbookId ?? null,
+    playbookId: trade.playbookId ?? "",
     openedAt: new Date(trade.openedAt).toISOString(),
-    closedAt: trade.closedAt ? new Date(trade.closedAt).toISOString() : null,
     createdAt: new Date(trade.createdAt).toISOString(),
     updatedAt: new Date(trade.updatedAt).toISOString(),
+    journalEntry: trade.journalEntry
+      ? {
+          ...trade.journalEntry,
+          createdAt: new Date(trade.journalEntry.createdAt).toISOString(),
+          updatedAt: new Date(trade.journalEntry.updatedAt).toISOString(),
+        }
+      : null,
   };
 }
 
@@ -297,7 +303,7 @@ function formatRatio(value: number | null) {
 
 function formatDate(iso: string | null) {
   if (!iso) {
-    return "Open";
+    return "-";
   }
 
   return `${dateFormatter.format(new Date(iso))} UTC`;
@@ -305,7 +311,7 @@ function formatDate(iso: string | null) {
 
 function formatShortDate(iso: string | null) {
   if (!iso) {
-    return "Open";
+    return "-";
   }
 
   return shortDateFormatter.format(new Date(iso));
@@ -350,10 +356,6 @@ function getMetricValueClass(tone: MoneyTone) {
 function getStatusBadgeClass(trade: TradeDto) {
   const pnl = getTradePnl(trade);
 
-  if (pnl === null) {
-    return "bg-blue-50 text-blue-700";
-  }
-
   if (pnl > 0) {
     return "bg-emerald-50 text-[#16A779]";
   }
@@ -368,10 +370,6 @@ function getStatusBadgeClass(trade: TradeDto) {
 function getTradeStatusLabel(trade: TradeDto) {
   const pnl = getTradePnl(trade);
 
-  if (pnl === null) {
-    return "OPEN";
-  }
-
   if (pnl > 0) {
     return "WIN";
   }
@@ -384,32 +382,20 @@ function getTradeStatusLabel(trade: TradeDto) {
 }
 
 function getDirectionLabel(side: TradeSide) {
-  return side === "buy" ? "Long" : "Short";
+  return side === "long" ? "Long" : "Short";
 }
 
-function getTradeNotional(trade: TradeDto) {
-  return trade.entry * trade.quantity;
+function getTradeRisk(trade: TradeDto) {
+  return trade.riskDollars;
 }
 
-function getTradeReturnPct(trade: TradeDto) {
-  if (trade.exit === null) {
-    return null;
-  }
-
-  const direction = trade.side === "buy" ? 1 : -1;
-  return ((trade.exit - trade.entry) / trade.entry) * direction;
-}
-
-function getOpenTradeAgeDays(trade: TradeDto, now: Date) {
-  const openedAt = new Date(trade.openedAt);
-  const elapsed = now.getTime() - openedAt.getTime();
-
-  return Math.max(0, Math.floor(elapsed / (24 * 60 * 60 * 1000)));
+function getTradeRMultiple(trade: TradeDto) {
+  return trade.rMultiple;
 }
 
 function getTradeHoldDays(trade: TradeDto, now: Date) {
   const openedAt = new Date(trade.openedAt).getTime();
-  const endedAt = trade.closedAt ? new Date(trade.closedAt).getTime() : now.getTime();
+  const endedAt = now.getTime();
 
   return Math.max(0, Math.ceil((endedAt - openedAt) / (24 * 60 * 60 * 1000)));
 }
@@ -488,12 +474,10 @@ function getEquityChart(points: EquityPoint[]) {
 }
 
 function buildSymbolAllocation(trades: TradeDto[]) {
-  const openTrades = trades.filter((trade) => trade.exit === null);
-  const source = openTrades.length > 0 ? openTrades : trades;
   const totals = new Map<string, number>();
 
-  for (const trade of source) {
-    totals.set(trade.symbol, (totals.get(trade.symbol) ?? 0) + getTradeNotional(trade));
+  for (const trade of trades) {
+    totals.set(trade.symbol, (totals.get(trade.symbol) ?? 0) + getTradeRisk(trade));
   }
 
   const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
@@ -510,24 +494,19 @@ function buildSymbolAllocation(trades: TradeDto[]) {
 }
 
 function buildMonthlyReturns(trades: TradeDto[]) {
-  const monthly = new Map<string, { label: string; pnl: number; notional: number }>();
+  const monthly = new Map<string, { label: string; pnl: number; risk: number }>();
 
   for (const trade of trades) {
     const pnl = getTradePnl(trade);
-
-    if (pnl === null) {
-      continue;
-    }
-
-    const date = new Date(trade.closedAt ?? trade.openedAt);
+    const date = new Date(trade.openedAt);
     const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth()).padStart(2, "0")}`;
     const label = new Intl.DateTimeFormat("en-US", {
       month: "short",
       timeZone: "UTC",
     }).format(date);
-    const current = monthly.get(key) ?? { label, pnl: 0, notional: 0 };
+    const current = monthly.get(key) ?? { label, pnl: 0, risk: 0 };
     current.pnl += pnl;
-    current.notional += getTradeNotional(trade);
+    current.risk += getTradeRisk(trade);
     monthly.set(key, current);
   }
 
@@ -536,39 +515,33 @@ function buildMonthlyReturns(trades: TradeDto[]) {
     .slice(-6)
     .map(([, month]) => ({
       month: month.label,
-      returnPct: month.notional > 0 ? (month.pnl / month.notional) * 100 : 0,
+      returnPct: month.risk > 0 ? month.pnl / month.risk : 0,
       pnl: month.pnl,
     }));
 }
 
 function buildReturnDistribution(trades: TradeDto[]) {
   const buckets = [
-    { range: "< -10%", count: 0 },
-    { range: "-10% to -5%", count: 0 },
-    { range: "-5% to 0%", count: 0 },
-    { range: "0% to 5%", count: 0 },
-    { range: "5% to 10%", count: 0 },
-    { range: "> 10%", count: 0 },
+    { range: "< -2R", count: 0 },
+    { range: "-2R to -1R", count: 0 },
+    { range: "-1R to 0R", count: 0 },
+    { range: "0R to 1R", count: 0 },
+    { range: "1R to 2R", count: 0 },
+    { range: "> 2R", count: 0 },
   ];
 
   for (const trade of trades) {
-    const returnPct = getTradeReturnPct(trade);
+    const value = getTradeRMultiple(trade);
 
-    if (returnPct === null) {
-      continue;
-    }
-
-    const value = returnPct * 100;
-
-    if (value < -10) {
+    if (value < -2) {
       buckets[0].count += 1;
-    } else if (value < -5) {
+    } else if (value < -1) {
       buckets[1].count += 1;
     } else if (value < 0) {
       buckets[2].count += 1;
-    } else if (value < 5) {
+    } else if (value < 1) {
       buckets[3].count += 1;
-    } else if (value < 10) {
+    } else if (value < 2) {
       buckets[4].count += 1;
     } else {
       buckets[5].count += 1;
@@ -585,17 +558,17 @@ function buildPlaybooks(
 ): PlaybookSummary[] {
   return playbooks.map((playbook) => {
     const assignedTrades = trades.filter((trade) => trade.playbookId === playbook.id);
-    const closed = assignedTrades.filter((trade) => trade.exit !== null);
-    const wins = closed.filter((trade) => (getTradePnl(trade) ?? 0) > 0);
-    const returns = closed
-      .map(getTradeReturnPct)
-      .filter((returnPct): returnPct is number => returnPct !== null);
-    const sorted = [...closed].sort(
-      (a, b) => (getTradePnl(b) ?? 0) - (getTradePnl(a) ?? 0)
-    );
+    const wins = assignedTrades.filter((trade) => getTradePnl(trade) > 0);
+    const sorted = [...assignedTrades].sort((a, b) => getTradePnl(b) - getTradePnl(a));
     const averageReturn =
-      returns.length > 0
-        ? (returns.reduce((total, value) => total + value, 0) / returns.length) * 100
+      assignedTrades.length > 0
+        ? assignedTrades.reduce((total, trade) => total + getTradePnl(trade), 0) /
+          assignedTrades.length
+        : 0;
+    const averageRMultiple =
+      assignedTrades.length > 0
+        ? assignedTrades.reduce((total, trade) => total + getTradeRMultiple(trade), 0) /
+          assignedTrades.length
         : 0;
     const averageHoldDays =
       assignedTrades.length > 0
@@ -612,17 +585,17 @@ function buildPlaybooks(
       color: playbook.color,
       rules: playbook.rules,
       trades: assignedTrades,
-      winRate: closed.length > 0 ? wins.length / closed.length : null,
+      winRate: assignedTrades.length > 0 ? wins.length / assignedTrades.length : null,
       avgReturn: averageReturn,
-      avgRMultiple: averageReturn / 5,
+      avgRMultiple: averageRMultiple,
       totalTrades: assignedTrades.length,
       avgHoldDays: averageHoldDays,
       bestTrade: sorted[0]
-        ? `${sorted[0].symbol} ${formatMoney(getTradePnl(sorted[0]) ?? 0)}`
+        ? `${sorted[0].symbol} ${formatMoney(getTradePnl(sorted[0]))}`
         : "-",
       worstTrade: sorted[sorted.length - 1]
         ? `${sorted[sorted.length - 1].symbol} ${formatMoney(
-            getTradePnl(sorted[sorted.length - 1]) ?? 0
+            getTradePnl(sorted[sorted.length - 1])
           )}`
         : "-",
     };
@@ -655,85 +628,54 @@ async function readApiBody(response: Response) {
 }
 
 function buildPayload(
-  form: TradeFormState,
-  editingTrade: TradeDto | null
+  form: TradeFormState
 ): { payload: TradePayload; error: null } | { payload: null; error: string } {
+  const playbookId = form.playbookId.trim();
   const symbol = form.symbol.trim().toUpperCase();
-  const entry = Number(form.entry);
-  const quantity = Number(form.quantity);
+  const riskDollars = Number(form.riskDollars);
+  const rMultiple = Number(form.rMultiple);
   const openedAtResult = parseTradeDateInput(form.openedAt);
-  const exitValue = form.exit.trim();
-  const closedAtValue = form.closedAt.trim();
-  const notes = form.notes.trim();
+  const tradeIdea = form.tradeIdea.trim();
+  const confluences = form.confluences.trim();
+
+  if (!playbookId) {
+    return { payload: null, error: "Select a Playbook before saving." };
+  }
 
   if (!symbol) {
     return { payload: null, error: "Symbol is required." };
   }
 
-  if (!Number.isFinite(entry) || entry <= 0) {
-    return { payload: null, error: "Entry must be a positive number." };
+  if (!Number.isFinite(riskDollars) || riskDollars <= 0) {
+    return { payload: null, error: "Risk must be a positive number." };
   }
 
-  if (!Number.isInteger(quantity) || quantity <= 0) {
-    return { payload: null, error: "Quantity must be a positive whole number." };
+  if (!Number.isFinite(rMultiple)) {
+    return { payload: null, error: "R multiple must be a number." };
+  }
+
+  if (!tradeIdea) {
+    return { payload: null, error: "Trade idea is required." };
+  }
+
+  if (!confluences) {
+    return { payload: null, error: "Confluences are required." };
   }
 
   if (!openedAtResult.ok) {
-    return { payload: null, error: `Opened date: ${openedAtResult.error}` };
-  }
-
-  if (editingTrade && editingTrade.exit !== null && exitValue === "") {
-    return {
-      payload: null,
-      error: "Enter an exit price before saving this edit.",
-    };
-  }
-
-  if (editingTrade && editingTrade.closedAt !== null && closedAtValue === "") {
-    return {
-      payload: null,
-      error: "Enter a closed date before saving this edit.",
-    };
+    return { payload: null, error: `Trade date: ${openedAtResult.error}` };
   }
 
   const payload: TradePayload = {
+    playbookId,
     symbol,
     side: form.side,
-    entry,
-    quantity,
+    riskDollars,
+    rMultiple,
     openedAt: openedAtResult.iso,
+    tradeIdea,
+    confluences,
   };
-
-  if (exitValue) {
-    const exit = Number(exitValue);
-
-    if (!Number.isFinite(exit) || exit <= 0) {
-      return { payload: null, error: "Exit must be a positive number." };
-    }
-
-    payload.exit = exit;
-  }
-
-  if (closedAtValue) {
-    const closedAtResult = parseTradeDateInput(closedAtValue);
-
-    if (!closedAtResult.ok) {
-      return { payload: null, error: `Closed date: ${closedAtResult.error}` };
-    }
-
-    if (new Date(closedAtResult.iso) < new Date(openedAtResult.iso)) {
-      return {
-        payload: null,
-        error: "Closed date must be after the opened date.",
-      };
-    }
-
-    payload.closedAt = closedAtResult.iso;
-  }
-
-  if (notes || editingTrade?.notes) {
-    payload.notes = notes;
-  }
 
   return { payload, error: null };
 }
@@ -817,7 +759,7 @@ function StatusPill({ trade }: { trade: TradeDto }) {
 }
 
 function DirectionPill({ side }: { side: TradeSide }) {
-  const isLong = side === "buy";
+  const isLong = side === "long";
 
   return (
     <span
@@ -1194,19 +1136,16 @@ function DashboardOverview({
   score,
   equityChart,
   onNav,
-  currentDate,
 }: {
   trades: TradeDto[];
   report: AnalyticsReport;
   score: ReturnType<typeof buildScoreMetrics>;
   equityChart: ReturnType<typeof getEquityChart>;
   onNav: (view: DashboardView) => void;
-  currentDate: Date;
 }) {
-  const openTrades = trades.filter((trade) => trade.exit === null);
   const recentTrades = trades.slice(0, 8);
   const allocation = buildSymbolAllocation(trades);
-  const loggedCapital = trades.reduce((sum, trade) => sum + getTradeNotional(trade), 0);
+  const loggedRisk = trades.reduce((sum, trade) => sum + getTradeRisk(trade), 0);
   const dailyBars = report.daily.filter((day) => day.closedTrades > 0).slice(-30);
   const maxDailyAbs = Math.max(1, ...dailyBars.map((day) => Math.abs(day.pnl)));
 
@@ -1216,7 +1155,7 @@ function DashboardOverview({
         <MetricCard
           label="Net P&L"
           value={formatCompactMoney(report.netPnl)}
-          detail={`${numberFormatter.format(report.closedTrades)} closed / ${numberFormatter.format(report.openTrades)} open`}
+          detail={`${numberFormatter.format(report.closedTrades)} completed trades`}
           tone={getMoneyTone(report.netPnl)}
         />
         <MetricCard
@@ -1232,12 +1171,12 @@ function DashboardOverview({
         <MetricCard
           label="Expectancy"
           value={formatCompactMoney(report.expectancy)}
-          detail="Per closed trade"
+          detail="Per completed trade"
           tone={getMoneyTone(report.expectancy)}
         />
         <MetricCard
-          label="Logged Capital"
-          value={formatCompactMoney(loggedCapital)}
+          label="Logged Risk"
+          value={formatCompactMoney(loggedRisk)}
           detail={`${numberFormatter.format(trades.length)} total records`}
         />
       </div>
@@ -1270,7 +1209,7 @@ function DashboardOverview({
               Symbol Allocation
             </h2>
             <p className="mt-1 text-[11px] text-[#697386]">
-              Based on {openTrades.length > 0 ? "open trade" : "logged trade"} exposure
+              Based on logged risk by symbol
             </p>
           </div>
 
@@ -1390,7 +1329,7 @@ function DashboardOverview({
               <table className="w-full min-w-[640px] border-collapse">
                 <thead>
                   <tr className="border-b border-[#E6E8EF] text-left">
-                    {["Symbol", "Direction", "P&L", "Return", "Status", "Date"].map(
+                    {["Symbol", "Direction", "P&L", "R", "Result", "Date"].map(
                       (heading) => (
                         <th
                           key={heading}
@@ -1405,8 +1344,6 @@ function DashboardOverview({
                 <tbody>
                   {recentTrades.map((trade) => {
                     const pnl = getTradePnl(trade);
-                    const returnPct = getTradeReturnPct(trade);
-
                     return (
                       <tr key={trade.id} className="border-b border-[#F1F3F7] last:border-0">
                         <td className="px-2 py-2">
@@ -1420,31 +1357,27 @@ function DashboardOverview({
                         </td>
                         <td
                           className={`px-2 py-2 text-right text-[12px] font-semibold ${
-                            pnl === null
-                              ? "text-[#697386]"
-                              : pnl >= 0
+                            pnl >= 0
                                 ? "text-[#16A779]"
                                 : "text-[#E25555]"
                           }`}
                         >
-                          {pnl === null ? "Open" : formatMoney(pnl)}
+                          {formatMoney(pnl)}
                         </td>
                         <td
                           className={`px-2 py-2 text-[11px] font-medium ${
-                            returnPct === null
-                              ? "text-[#697386]"
-                              : returnPct >= 0
+                            trade.rMultiple >= 0
                                 ? "text-[#16A779]"
                                 : "text-[#E25555]"
                           }`}
                         >
-                          {formatPercent(returnPct)}
+                          {formatRatio(trade.rMultiple)}R
                         </td>
                         <td className="px-2 py-2">
                           <StatusPill trade={trade} />
                         </td>
                         <td className="px-2 py-2 text-[11px] text-[#697386]">
-                          {formatShortDate(trade.closedAt ?? trade.openedAt)}
+                          {formatShortDate(trade.openedAt)}
                         </td>
                       </tr>
                     );
@@ -1474,8 +1407,10 @@ function DashboardOverview({
             tone: "neutral" as const,
           },
           {
-            label: "Open Reviews",
-            value: numberFormatter.format(openTrades.length),
+            label: "Journaled",
+            value: numberFormatter.format(
+              trades.filter((trade) => trade.journalEntry).length
+            ),
             tone: "neutral" as const,
           },
         ].map((item) => (
@@ -1495,7 +1430,7 @@ function DashboardOverview({
         ))}
       </div>
 
-      {openTrades.length > 0 ? (
+      {recentTrades.length > 0 ? (
         <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
@@ -1503,7 +1438,7 @@ function DashboardOverview({
                 Today&apos;s Review
               </h2>
               <p className="mt-1 text-[11px] text-[#697386]">
-                {numberFormatter.format(openTrades.length)} open trades on deck
+                {numberFormatter.format(recentTrades.length)} recent completed trades
               </p>
             </div>
             <button
@@ -1516,18 +1451,18 @@ function DashboardOverview({
           </div>
 
           <div className="grid gap-2 md:grid-cols-3">
-            {openTrades.slice(0, 3).map((trade) => (
+            {recentTrades.slice(0, 3).map((trade) => (
               <div key={trade.id} className="rounded-lg bg-[#F7F8FA] p-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[12px] font-semibold text-[#171923]">
                     {trade.symbol}
                   </p>
                   <span className="text-[11px] text-[#697386]">
-                    {numberFormatter.format(getOpenTradeAgeDays(trade, currentDate))}d
+                    {formatRatio(trade.rMultiple)}R
                   </span>
                 </div>
                 <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-[#697386]">
-                  {trade.notes || "No notes captured for this open trade."}
+                  {trade.journalEntry?.tradeIdea || "No trade idea captured."}
                 </p>
               </div>
             ))}
@@ -2128,7 +2063,6 @@ function PlaybooksView({
               <div className="space-y-1.5">
                 {selected.trades.slice(0, 6).map((trade) => {
                   const pnl = getTradePnl(trade);
-                  const returnPct = getTradeReturnPct(trade);
 
                   return (
                     <button
@@ -2151,10 +2085,10 @@ function PlaybooksView({
                             getMoneyTone(pnl)
                           )}`}
                         >
-                          {pnl === null ? "Open" : formatMoney(pnl)}
+                          {formatMoney(pnl)}
                         </div>
                         <div className="text-[10px] text-[#697386]">
-                          {formatPercent(returnPct)}
+                          {formatRatio(trade.rMultiple)}R
                         </div>
                       </div>
                     </button>
@@ -2180,8 +2114,7 @@ function SettingsView({
   trades: TradeDto[];
   report: AnalyticsReport;
 }) {
-  const notedTrades = trades.filter((trade) => trade.notes?.trim()).length;
-  const openTrades = trades.filter((trade) => trade.exit === null).length;
+  const journaledTrades = trades.filter((trade) => trade.journalEntry).length;
 
   return (
     <div className="space-y-4 p-4 lg:p-5">
@@ -2207,9 +2140,11 @@ function SettingsView({
           <div className="grid gap-3 sm:grid-cols-4">
             {[
               ["Total Trades", numberFormatter.format(trades.length)],
-              ["Open Trades", numberFormatter.format(openTrades)],
-              ["Closed Trades", numberFormatter.format(report.closedTrades)],
-              ["Notes", numberFormatter.format(notedTrades)],
+              ["Completed Trades", numberFormatter.format(report.closedTrades)],
+              ["Journal Entries", numberFormatter.format(journaledTrades)],
+              ["Total Risk", formatCompactMoney(
+                trades.reduce((sum, trade) => sum + trade.riskDollars, 0)
+              )],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg bg-[#F7F8FA] p-3">
                 <p className="text-[10px] text-[#697386]">{label}</p>
@@ -2274,13 +2209,13 @@ function SettingsView({
 function TradeLogView({
   trades,
   search,
-  statusFilter,
+  resultFilter,
   sideFilter,
   selectedTrade,
   deletingId,
   saving,
   onSearchChange,
-  onStatusFilterChange,
+  onResultFilterChange,
   onSideFilterChange,
   onSelectTrade,
   onEdit,
@@ -2289,13 +2224,13 @@ function TradeLogView({
 }: {
   trades: TradeDto[];
   search: string;
-  statusFilter: "all" | "open" | "closed";
+  resultFilter: "all" | "win" | "loss";
   sideFilter: "all" | TradeSide;
   selectedTrade: TradeDto | null;
   deletingId: string | null;
   saving: boolean;
   onSearchChange: (value: string) => void;
-  onStatusFilterChange: (value: "all" | "open" | "closed") => void;
+  onResultFilterChange: (value: "all" | "win" | "loss") => void;
   onSideFilterChange: (value: "all" | TradeSide) => void;
   onSelectTrade: (trade: TradeDto | null) => void;
   onEdit: (trade: TradeDto) => void;
@@ -2306,9 +2241,8 @@ function TradeLogView({
     .map(getTradePnl)
     .filter((pnl): pnl is number => pnl !== null)
     .reduce((sum, pnl) => sum + pnl, 0);
-  const closedTrades = trades.filter((trade) => trade.exit !== null);
-  const wins = closedTrades.filter((trade) => (getTradePnl(trade) ?? 0) > 0).length;
-  const winRate = closedTrades.length > 0 ? wins / closedTrades.length : null;
+  const wins = trades.filter((trade) => getTradePnl(trade) > 0).length;
+  const winRate = trades.length > 0 ? wins / trades.length : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -2316,18 +2250,18 @@ function TradeLogView({
         <input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search symbol or notes"
+          placeholder="Search symbol, trade idea, or confluences"
           className="h-8 w-full rounded-md border border-[#E6E8EF] bg-[#F7F8FA] px-3 text-[12px] text-[#171923] outline-none placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 sm:w-56"
         />
 
         <div className="flex gap-1">
-          {(["all", "open", "closed"] as const).map((option) => (
+          {(["all", "win", "loss"] as const).map((option) => (
             <button
               key={option}
               type="button"
-              onClick={() => onStatusFilterChange(option)}
+              onClick={() => onResultFilterChange(option)}
               className={`h-8 rounded-md border px-2.5 text-[11px] font-medium capitalize ${
-                statusFilter === option
+                resultFilter === option
                   ? "border-[#6C5DD3] bg-[#6C5DD3]/10 text-[#6C5DD3]"
                   : "border-[#E6E8EF] bg-white text-[#697386]"
               }`}
@@ -2338,7 +2272,7 @@ function TradeLogView({
         </div>
 
         <div className="flex gap-1">
-          {(["all", "buy", "sell"] as const).map((option) => (
+          {(["all", "long", "short"] as const).map((option) => (
             <button
               key={option}
               type="button"
@@ -2349,7 +2283,7 @@ function TradeLogView({
                   : "border-[#E6E8EF] bg-white text-[#697386]"
               }`}
             >
-              {option === "buy" ? "Long" : option === "sell" ? "Short" : "All"}
+              {option === "all" ? "All" : getDirectionLabel(option)}
             </button>
           ))}
         </div>
@@ -2407,14 +2341,11 @@ function TradeLogView({
                     "Date",
                     "Symbol",
                     "Side",
-                    "Entry",
-                    "Exit",
-                    "Qty",
-                    "Size",
+                    "Risk",
+                    "R",
                     "P&L",
-                    "Return",
-                    "Status",
-                    "Notes",
+                    "Result",
+                    "Trade Idea",
                     "",
                   ].map((heading) => (
                     <th
@@ -2429,7 +2360,6 @@ function TradeLogView({
               <tbody>
                 {trades.map((trade) => {
                   const pnl = getTradePnl(trade);
-                  const returnPct = getTradeReturnPct(trade);
                   const deleting = deletingId === trade.id;
                   const selected = selectedTrade?.id === trade.id;
 
@@ -2453,44 +2383,27 @@ function TradeLogView({
                         <DirectionPill side={trade.side} />
                       </td>
                       <td className="px-3 py-2 text-right text-[12px] text-[#171923]">
-                        {formatMoney(trade.entry)}
+                        {formatMoney(trade.riskDollars)}
                       </td>
                       <td className="px-3 py-2 text-right text-[12px] text-[#697386]">
-                        {trade.exit === null ? "-" : formatMoney(trade.exit)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-[12px] text-[#171923]">
-                        {numberFormatter.format(trade.quantity)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-[12px] text-[#697386]">
-                        {formatCompactMoney(getTradeNotional(trade))}
+                        {formatRatio(trade.rMultiple)}R
                       </td>
                       <td
                         className={`px-3 py-2 text-right text-[12px] font-semibold ${
-                          pnl === null
-                            ? "text-[#697386]"
-                            : pnl >= 0
+                          pnl >= 0
                               ? "text-[#16A779]"
                               : "text-[#E25555]"
                         }`}
                       >
-                        {pnl === null ? "Open" : formatMoney(pnl)}
-                      </td>
-                      <td
-                        className={`px-3 py-2 text-right text-[11px] font-medium ${
-                          returnPct === null
-                            ? "text-[#697386]"
-                            : returnPct >= 0
-                              ? "text-[#16A779]"
-                              : "text-[#E25555]"
-                        }`}
-                      >
-                        {formatPercent(returnPct)}
+                        {formatMoney(pnl)}
                       </td>
                       <td className="px-3 py-2">
                         <StatusPill trade={trade} />
                       </td>
                       <td className="max-w-48 px-3 py-2 text-[11px] text-[#697386]">
-                        <div className="truncate">{trade.notes || "-"}</div>
+                        <div className="truncate">
+                          {trade.journalEntry?.tradeIdea || "-"}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex justify-end gap-2">
@@ -2552,25 +2465,22 @@ function TradeLogView({
                 {([
                   {
                     label: "P&L",
-                    value:
-                      getTradePnl(selectedTrade) === null
-                        ? "Open"
-                        : formatMoney(getTradePnl(selectedTrade) ?? 0),
+                    value: formatMoney(getTradePnl(selectedTrade)),
                     tone: getMoneyTone(getTradePnl(selectedTrade)),
                   },
                   {
-                    label: "Return",
-                    value: formatPercent(getTradeReturnPct(selectedTrade)),
-                    tone: getMoneyTone(getTradeReturnPct(selectedTrade)),
+                    label: "R Multiple",
+                    value: `${formatRatio(selectedTrade.rMultiple)}R`,
+                    tone: getMoneyTone(selectedTrade.rMultiple),
                   },
                   {
-                    label: "Trade Size",
-                    value: formatCompactMoney(getTradeNotional(selectedTrade)),
+                    label: "Risk",
+                    value: formatCompactMoney(selectedTrade.riskDollars),
                     tone: "neutral" as const,
                   },
                   {
-                    label: "Quantity",
-                    value: numberFormatter.format(selectedTrade.quantity),
+                    label: "Playbook",
+                    value: "Assigned",
                     tone: "neutral" as const,
                   },
                 ] satisfies Array<{ label: string; value: string; tone: MoneyTone }>).map((item) => (
@@ -2589,10 +2499,10 @@ function TradeLogView({
 
               <div className="mt-4 space-y-2 text-[12px]">
                 {[
-                  ["Entry Price", formatMoney(selectedTrade.entry)],
-                  ["Exit Price", selectedTrade.exit ? formatMoney(selectedTrade.exit) : "-"],
-                  ["Opened", formatDate(selectedTrade.openedAt)],
-                  ["Closed", formatDate(selectedTrade.closedAt)],
+                  ["Trade Date", formatDate(selectedTrade.openedAt)],
+                  ["Risk", formatMoney(selectedTrade.riskDollars)],
+                  ["R Multiple", `${formatRatio(selectedTrade.rMultiple)}R`],
+                  ["P&L", formatMoney(getTradePnl(selectedTrade))],
                 ].map(([label, value]) => (
                   <div key={label} className="flex justify-between gap-3">
                     <span className="text-[#697386]">{label}</span>
@@ -2604,9 +2514,19 @@ function TradeLogView({
               </div>
 
               <div className="mt-4">
-                <p className="mb-1 text-[11px] font-medium text-[#697386]">Notes</p>
+                <p className="mb-1 text-[11px] font-medium text-[#697386]">Trade Idea</p>
                 <div className="rounded-lg bg-[#F7F8FA] p-3 text-[12px] leading-5 text-[#171923]">
-                  {selectedTrade.notes || "No notes captured."}
+                  {selectedTrade.journalEntry?.tradeIdea || "No trade idea captured."}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <p className="mb-1 text-[11px] font-medium text-[#697386]">
+                  Confluences
+                </p>
+                <div className="rounded-lg bg-[#F7F8FA] p-3 text-[12px] leading-5 text-[#171923]">
+                  {selectedTrade.journalEntry?.confluences ||
+                    "No confluences captured."}
                 </div>
               </div>
             </aside>
@@ -2623,6 +2543,7 @@ function TradeFormView({
   saving,
   error,
   trades,
+  playbooks,
   onUpdateForm,
   onSubmit,
   onReset,
@@ -2633,6 +2554,7 @@ function TradeFormView({
   saving: boolean;
   error: string | null;
   trades: TradeDto[];
+  playbooks: PlaybookDto[];
   onUpdateForm: <Key extends keyof TradeFormState>(
     key: Key,
     value: TradeFormState[Key]
@@ -2641,7 +2563,9 @@ function TradeFormView({
   onReset: () => void;
   onEdit: (trade: TradeDto) => void;
 }) {
-  const notedTrades = trades.filter((trade) => trade.notes).slice(0, 5);
+  const journaledTrades = trades
+    .filter((trade) => trade.journalEntry?.tradeIdea)
+    .slice(0, 5);
 
   return (
     <div className="grid gap-4 p-4 lg:grid-cols-[380px_minmax(0,1fr)] lg:p-5">
@@ -2679,12 +2603,29 @@ function TradeFormView({
 
         <form className="mt-4 grid gap-3" onSubmit={onSubmit}>
           <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+            Playbook
+            <select
+              value={form.playbookId}
+              onChange={(event) => onUpdateForm("playbookId", event.target.value)}
+              className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              disabled={saving}
+            >
+              <option value="">Select a Playbook</option>
+              {playbooks.map((playbook) => (
+                <option key={playbook.id} value={playbook.id}>
+                  {playbook.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
             Symbol
             <input
               value={form.symbol}
               onChange={(event) => onUpdateForm("symbol", event.target.value)}
               className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-              placeholder="AAPL"
+              placeholder="ES"
               maxLength={20}
               disabled={saving}
             />
@@ -2701,46 +2642,16 @@ function TradeFormView({
                 className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                 disabled={saving}
               >
-                <option value="buy">Buy</option>
-                <option value="sell">Sell</option>
+                <option value="long">Long</option>
+                <option value="short">Short</option>
               </select>
             </label>
 
             <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
-              Quantity
+              Risk
               <input
-                value={form.quantity}
-                onChange={(event) => onUpdateForm("quantity", event.target.value)}
-                className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-                inputMode="numeric"
-                min="1"
-                step="1"
-                type="number"
-                disabled={saving}
-              />
-            </label>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
-              Entry
-              <input
-                value={form.entry}
-                onChange={(event) => onUpdateForm("entry", event.target.value)}
-                className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                type="number"
-                disabled={saving}
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
-              Exit
-              <input
-                value={form.exit}
-                onChange={(event) => onUpdateForm("exit", event.target.value)}
+                value={form.riskDollars}
+                onChange={(event) => onUpdateForm("riskDollars", event.target.value)}
                 className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                 inputMode="decimal"
                 min="0"
@@ -2752,7 +2663,20 @@ function TradeFormView({
           </div>
 
           <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
-            Opened
+            R Multiple
+            <input
+              value={form.rMultiple}
+              onChange={(event) => onUpdateForm("rMultiple", event.target.value)}
+              className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              inputMode="decimal"
+              step="0.01"
+              type="number"
+              disabled={saving}
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+            Trade Date
             <input
               value={form.openedAt}
               onChange={(event) => onUpdateForm("openedAt", event.target.value)}
@@ -2767,22 +2691,21 @@ function TradeFormView({
           </label>
 
           <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
-            Closed
-            <input
-              value={form.closedAt}
-              onChange={(event) => onUpdateForm("closedAt", event.target.value)}
-              className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-              placeholder="2026-06-20 15:45"
-              type="text"
+            Trade Idea
+            <textarea
+              value={form.tradeIdea}
+              onChange={(event) => onUpdateForm("tradeIdea", event.target.value)}
+              className="min-h-24 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              maxLength={5000}
               disabled={saving}
             />
           </label>
 
           <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
-            Notes
+            Confluences
             <textarea
-              value={form.notes}
-              onChange={(event) => onUpdateForm("notes", event.target.value)}
+              value={form.confluences}
+              onChange={(event) => onUpdateForm("confluences", event.target.value)}
               className="min-h-24 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
               maxLength={5000}
               disabled={saving}
@@ -2809,18 +2732,18 @@ function TradeFormView({
             Recent Notes
           </h2>
           <p className="mt-1 text-[11px] text-[#697386]">
-            Notes stored on trade records
+            Trade ideas stored on completed trade records
           </p>
         </div>
 
-        {notedTrades.length === 0 ? (
+        {journaledTrades.length === 0 ? (
           <EmptyState
-            title="No notes yet"
-            body="Add notes to a trade to build your journal history."
+            title="No journal entries yet"
+            body="Add a completed trade to build your journal history."
           />
         ) : (
           <div className="grid gap-3">
-            {notedTrades.map((trade) => (
+            {journaledTrades.map((trade) => (
               <button
                 key={trade.id}
                 type="button"
@@ -2839,7 +2762,7 @@ function TradeFormView({
                   <StatusPill trade={trade} />
                 </div>
                 <p className="mt-2 line-clamp-3 text-[12px] leading-5 text-[#4B5565]">
-                  {trade.notes}
+                  {trade.journalEntry?.tradeIdea}
                 </p>
               </button>
             ))}
@@ -2874,8 +2797,8 @@ export default function TradeJournal({
   const [editingPlaybookId, setEditingPlaybookId] = useState<string | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [tradeSearch, setTradeSearch] = useState("");
-  const [statusFilter, setStatusFilter] =
-    useState<"all" | "open" | "closed">("all");
+  const [resultFilter, setResultFilter] =
+    useState<"all" | "win" | "loss">("all");
   const [sideFilter, setSideFilter] = useState<"all" | TradeSide>("all");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -2919,16 +2842,17 @@ export default function TradeJournal({
       if (
         query &&
         !trade.symbol.toLowerCase().includes(query) &&
-        !(trade.notes ?? "").toLowerCase().includes(query)
+        !(trade.journalEntry?.tradeIdea ?? "").toLowerCase().includes(query) &&
+        !(trade.journalEntry?.confluences ?? "").toLowerCase().includes(query)
       ) {
         return false;
       }
 
-      if (statusFilter === "open" && trade.exit !== null) {
+      if (resultFilter === "win" && getTradePnl(trade) <= 0) {
         return false;
       }
 
-      if (statusFilter === "closed" && trade.exit === null) {
+      if (resultFilter === "loss" && getTradePnl(trade) >= 0) {
         return false;
       }
 
@@ -2938,7 +2862,7 @@ export default function TradeJournal({
 
       return true;
     });
-  }, [sideFilter, statusFilter, tradeSearch, trades]);
+  }, [resultFilter, sideFilter, tradeSearch, trades]);
 
   function updateForm<Key extends keyof TradeFormState>(
     key: Key,
@@ -3084,7 +3008,7 @@ export default function TradeJournal({
     event.preventDefault();
     setError(null);
 
-    const result = buildPayload(form, editingTrade);
+    const result = buildPayload(form);
 
     if (result.error) {
       setError(result.error);
@@ -3206,7 +3130,6 @@ export default function TradeJournal({
               score={score}
               equityChart={equityChart}
               onNav={setActiveView}
-              currentDate={currentDate}
             />
           ) : null}
 
@@ -3214,13 +3137,13 @@ export default function TradeJournal({
             <TradeLogView
               trades={filteredTrades}
               search={tradeSearch}
-              statusFilter={statusFilter}
+              resultFilter={resultFilter}
               sideFilter={sideFilter}
               selectedTrade={selectedTrade}
               deletingId={deletingId}
               saving={saving}
               onSearchChange={setTradeSearch}
-              onStatusFilterChange={setStatusFilter}
+              onResultFilterChange={setResultFilter}
               onSideFilterChange={setSideFilter}
               onSelectTrade={(trade) => setSelectedTradeId(trade?.id ?? null)}
               onEdit={startEdit}
@@ -3264,6 +3187,7 @@ export default function TradeJournal({
               saving={saving}
               error={error}
               trades={trades}
+              playbooks={playbooks}
               onUpdateForm={updateForm}
               onSubmit={handleSubmit}
               onReset={resetForm}

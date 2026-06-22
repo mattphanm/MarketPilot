@@ -10,28 +10,40 @@ function serializeTrade(trade: {
   playbookId: string | null;
   symbol: string;
   side: string;
-  entry: number;
-  exit: number | null;
-  quantity: number;
+  riskDollars: number;
+  rMultiple: number;
   openedAt: Date;
-  closedAt: Date | null;
-  notes: string | null;
   createdAt: Date;
   updatedAt: Date;
+  journalEntry: {
+    id: string;
+    tradeId: string;
+    tradeIdea: string;
+    confluences: string;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
 }): TradeDto {
   return {
     id: trade.id,
-    playbookId: trade.playbookId,
+    playbookId: trade.playbookId ?? "",
     symbol: trade.symbol,
     side: trade.side as TradeDto["side"],
-    entry: trade.entry,
-    exit: trade.exit,
-    quantity: trade.quantity,
+    riskDollars: trade.riskDollars,
+    rMultiple: trade.rMultiple,
     openedAt: trade.openedAt.toISOString(),
-    closedAt: trade.closedAt?.toISOString() ?? null,
-    notes: trade.notes,
     createdAt: trade.createdAt.toISOString(),
     updatedAt: trade.updatedAt.toISOString(),
+    journalEntry: trade.journalEntry
+      ? {
+          id: trade.journalEntry.id,
+          tradeId: trade.journalEntry.tradeId,
+          tradeIdea: trade.journalEntry.tradeIdea,
+          confluences: trade.journalEntry.confluences,
+          createdAt: trade.journalEntry.createdAt.toISOString(),
+          updatedAt: trade.journalEntry.updatedAt.toISOString(),
+        }
+      : null,
   };
 }
 
@@ -104,14 +116,12 @@ export default async function Home() {
       playbookId: true,
       symbol: true,
       side: true,
-      entry: true,
-      exit: true,
-      quantity: true,
+      riskDollars: true,
+      rMultiple: true,
       openedAt: true,
-      closedAt: true,
-      notes: true,
       createdAt: true,
       updatedAt: true,
+      journalEntry: true,
     },
   });
   const playbooks = await prisma.playbook.findMany({

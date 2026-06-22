@@ -31,8 +31,8 @@ export const analyticsTestCases: TestCase[] = [
   },
   {
     path: "edge",
-    name: "handles trades that are still open",
-    expectation: "open trades without exit or closedAt do not break closed-trade performance calculations.",
+    name: "handles breakeven completed trades",
+    expectation: "breakeven futures trades do not break completed-trade performance calculations.",
   },
   {
     path: "failure",
@@ -71,70 +71,60 @@ const analyticsTrades: AnalyticsTrade[] = [
   {
     id: "aapl-win",
     symbol: "AAPL",
-    side: "buy",
-    entry: 100,
-    exit: 110,
-    quantity: 10,
+    side: "long",
+    riskDollars: 100,
+    rMultiple: 1,
     openedAt: "2026-06-03T14:00:00.000Z",
-    closedAt: "2026-06-03T15:00:00.000Z",
   },
   {
     id: "msft-loss",
     symbol: "MSFT",
-    side: "buy",
-    entry: 50,
-    exit: 45,
-    quantity: 4,
+    side: "long",
+    riskDollars: 20,
+    rMultiple: -1,
     openedAt: "2026-06-04T14:00:00.000Z",
-    closedAt: "2026-06-04T15:00:00.000Z",
   },
   {
     id: "tsla-short-win",
     symbol: "TSLA",
-    side: "sell",
-    entry: 200,
-    exit: 190,
-    quantity: 2,
+    side: "short",
+    riskDollars: 20,
+    rMultiple: 1,
     openedAt: "2026-06-10T14:00:00.000Z",
-    closedAt: "2026-06-10T15:00:00.000Z",
   },
   {
-    id: "nvda-open",
+    id: "nvda-flat",
     symbol: "NVDA",
-    side: "buy",
-    entry: 120,
-    exit: null,
-    quantity: 3,
+    side: "long",
+    riskDollars: 50,
+    rMultiple: 0,
     openedAt: "2026-06-11T14:00:00.000Z",
-    closedAt: null,
   },
   {
     id: "spy-old-win",
     symbol: "SPY",
-    side: "buy",
-    entry: 100,
-    exit: 120,
-    quantity: 1,
+    side: "long",
+    riskDollars: 20,
+    rMultiple: 1,
     openedAt: "2026-01-02T14:00:00.000Z",
-    closedAt: "2026-01-02T15:00:00.000Z",
   },
 ];
 
 describe("analytics report calculations", () => {
-  it("calculates realized performance without counting open trade P&L", () => {
+  it("calculates completed futures performance from risk and R", () => {
     const report = createAnalyticsReport(analyticsTrades, {
       now: new Date("2026-06-20T12:00:00.000Z"),
     });
 
     expect(report.totalTrades).toBe(5);
-    expect(report.closedTrades).toBe(4);
-    expect(report.openTrades).toBe(1);
+    expect(report.closedTrades).toBe(5);
+    expect(report.openTrades).toBe(0);
     expect(report.netPnl).toBe(120);
     expect(report.grossProfit).toBe(140);
     expect(report.grossLoss).toBe(-20);
-    expect(report.winRate).toBe(0.75);
+    expect(report.winRate).toBe(0.6);
     expect(report.profitFactor).toBe(7);
-    expect(report.expectancy).toBe(30);
+    expect(report.expectancy).toBe(24);
   });
 
   it("respects supported relative date ranges", () => {
@@ -144,7 +134,7 @@ describe("analytics report calculations", () => {
     });
 
     expect(report.totalTrades).toBe(4);
-    expect(report.closedTrades).toBe(3);
+    expect(report.closedTrades).toBe(4);
     expect(report.netPnl).toBe(100);
     expect(report.daily.map((day) => day.dateKey)).toEqual([
       "2026-06-03",

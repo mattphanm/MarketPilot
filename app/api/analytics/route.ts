@@ -78,11 +78,9 @@ export async function GET(request: Request) {
       id: true,
       symbol: true,
       side: true,
-      entry: true,
-      exit: true,
-      quantity: true,
+      riskDollars: true,
+      rMultiple: true,
       openedAt: true,
-      closedAt: true,
     },
   });
   const report = createAnalyticsReport(trades, {

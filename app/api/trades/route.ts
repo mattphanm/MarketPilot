@@ -18,6 +18,7 @@ export async function GET() {
   const trades = await prisma.trade.findMany({
     where: { userId: user.userId },
     orderBy: [{ openedAt: "desc" }, { createdAt: "desc" }],
+    include: { journalEntry: true },
   });
 
   return NextResponse.json({ trades });
@@ -52,15 +53,46 @@ export async function POST(request: Request) {
     );
   }
 
-  const { openedAt, closedAt, ...tradeData } = result.data;
-  const trade = await prisma.trade.create({
-    data: {
-      ...tradeData,
-      openedAt: new Date(openedAt),
-      ...(closedAt ? { closedAt: new Date(closedAt) } : {}),
-      userId: user.userId,
-    },
+  const { openedAt, tradeIdea, confluences, ...tradeData } = result.data;
+  const trade = await prisma.$transaction(async (tx) => {
+    const playbook = await tx.playbook.findFirst({
+      where: {
+        id: tradeData.playbookId,
+        userId: user.userId,
+      },
+      select: { id: true },
+    });
+
+    if (!playbook) {
+      return null;
+    }
+
+    return tx.trade.create({
+      data: {
+        ...tradeData,
+        openedAt: new Date(openedAt),
+        userId: user.userId,
+        journalEntry: {
+          create: {
+            userId: user.userId,
+            tradeIdea,
+            confluences,
+          },
+        },
+      },
+      include: { journalEntry: true },
+    });
   });
+
+  if (!trade) {
+    return NextResponse.json(
+      {
+        error: "Invalid trade input",
+        issues: [{ path: ["playbookId"], message: "Playbook not found" }],
+      },
+      { status: 400 }
+    );
+  }
 
   return NextResponse.json({ trade }, { status: 201 });
 }

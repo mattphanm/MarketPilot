@@ -27,8 +27,8 @@ export const tradeTestCases: TestCase[] = [
   },
   {
     path: "edge",
-    name: "allows a trade to be created without optional exit fields",
-    expectation: "POST /api/trades accepts missing exit, closedAt, and notes fields.",
+    name: "allows a trade to be created with negative R",
+    expectation: "POST /api/trades accepts completed losing futures trades.",
   },
   {
     path: "failure",
@@ -43,11 +43,14 @@ export const tradeTestCases: TestCase[] = [
 ];
 
 const validTradePayload = {
+  playbookId: "playbook-1",
   symbol: " aapl ",
-  side: "buy",
-  entry: 185.25,
-  quantity: 10,
+  side: "long",
+  riskDollars: 250,
+  rMultiple: 1.5,
   openedAt: "2026-06-20T14:30:00.000Z",
+  tradeIdea: "Opening range continuation.",
+  confluences: "Trend day, VWAP hold, higher-low entry.",
 };
 
 describe("trade validation", () => {
@@ -64,17 +67,19 @@ describe("trade validation", () => {
   });
 
   it("edge: accepts a partial update with one field", () => {
-    const result = TradeUpdateSchema.safeParse({ notes: "Trimmed winner." });
+    const result = TradeUpdateSchema.safeParse({ rMultiple: -0.75 });
 
     expect(result.success).toBe(true);
   });
 
-  it("edge: accepts missing optional exit fields on create", () => {
-    const result = TradeSchema.safeParse(validTradePayload);
+  it("edge: accepts a completed losing futures trade", () => {
+    const result = TradeSchema.safeParse({
+      ...validTradePayload,
+      rMultiple: -1.25,
+    });
 
     expect(result.success).toBe(true);
-    expect(result.success && result.data.exit).toBeUndefined();
-    expect(result.success && result.data.closedAt).toBeUndefined();
+    expect(result.success && result.data.rMultiple).toBe(-1.25);
   });
 
   it("failure: rejects an empty update payload", () => {
@@ -83,10 +88,10 @@ describe("trade validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("failure: rejects closedAt before openedAt", () => {
+  it("failure: rejects non-positive risk", () => {
     const result = TradeSchema.safeParse({
       ...validTradePayload,
-      closedAt: "2026-06-20T13:30:00.000Z",
+      riskDollars: 0,
     });
 
     expect(result.success).toBe(false);

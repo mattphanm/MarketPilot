@@ -5,12 +5,10 @@ export type AnalyticsRangeKey = (typeof ANALYTICS_RANGES)[number];
 export type AnalyticsTrade = {
   id?: string;
   symbol: string;
-  side: "buy" | "sell" | string;
-  entry: number;
-  exit: number | null;
-  quantity: number;
+  side: "long" | "short" | string;
+  riskDollars: number;
+  rMultiple: number;
   openedAt: Date | string;
-  closedAt: Date | string | null;
 };
 
 export type DailyAnalytics = {
@@ -143,16 +141,11 @@ export function formatUtcDateKey(date: Date) {
 }
 
 export function getTradePnl(trade: AnalyticsTrade) {
-  if (trade.exit === null) {
-    return null;
-  }
-
-  const direction = trade.side === "buy" ? 1 : -1;
-  return (trade.exit - trade.entry) * trade.quantity * direction;
+  return trade.riskDollars * trade.rMultiple;
 }
 
 export function getTradeActivityDate(trade: AnalyticsTrade) {
-  return toDate(trade.closedAt ?? trade.openedAt);
+  return toDate(trade.openedAt);
 }
 
 function getRangeBounds({ range = "all", start, end, now = new Date() }: ReportOptions) {
@@ -229,15 +222,13 @@ function aggregateDaily(trades: AnalyticsTrade[]) {
     bucket.trades += 1;
     bucket.symbols.add(trade.symbol);
 
-    if (pnl !== null) {
-      bucket.closedTrades += 1;
-      bucket.pnl += pnl;
+    bucket.closedTrades += 1;
+    bucket.pnl += pnl;
 
-      if (pnl > 0) {
-        bucket.wins += 1;
-      } else if (pnl < 0) {
-        bucket.losses += 1;
-      }
+    if (pnl > 0) {
+      bucket.wins += 1;
+    } else if (pnl < 0) {
+      bucket.losses += 1;
     }
 
     dailyMap.set(dateKey, bucket);
@@ -258,8 +249,7 @@ export function createAnalyticsReport(
     isInsideBounds(getTradeActivityDate(trade), bounds)
   );
   const closedPnl = filteredTrades
-    .map(getTradePnl)
-    .filter((pnl): pnl is number => pnl !== null);
+    .map(getTradePnl);
   const grossProfit = closedPnl
     .filter((pnl) => pnl > 0)
     .reduce((total, pnl) => total + pnl, 0);
@@ -292,7 +282,7 @@ export function createAnalyticsReport(
     range,
     totalTrades: filteredTrades.length,
     closedTrades: closedPnl.length,
-    openTrades: filteredTrades.length - closedPnl.length,
+    openTrades: 0,
     winningTrades,
     losingTrades,
     breakevenTrades,
