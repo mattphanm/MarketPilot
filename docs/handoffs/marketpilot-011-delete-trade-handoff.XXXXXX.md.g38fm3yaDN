@@ -1,0 +1,66 @@
+MarketPilot issue 011 delete completed trade handoff
+
+Focus for next session
+
+Continue implementing `docs/issues/futures-journal-figma-integration/011-delete-completed-trade.md`. The user explicitly said no screenshot or visual checks are needed; they will verify UI.
+
+Relevant instructions and context
+
+- Repo: `/Users/matthewphan/Documents/Codex-Agentic/Projects/marketpilot`
+- AGENTS.md says this is Next.js 16 with breaking changes; read relevant docs under `node_modules/next/dist/docs/` before writing code. The relevant route-handler guide is `node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md`.
+- Issue path: `docs/issues/futures-journal-figma-integration/011-delete-completed-trade.md`
+
+What is already in the code
+
+- `app/api/trades/[id]/route.ts` already has `GET`, `PATCH`, and `DELETE`.
+- Existing `DELETE`:
+  - calls `requireUser()`
+  - deletes via `prisma.trade.deleteMany({ where: { id, userId: user.userId } })`
+  - returns 404 if no owned trade was deleted
+  - returns 204 on success
+- `prisma/schema.prisma` has `JournalEntry.trade` defined with `onDelete: Cascade`, so deleting a Trade should cascade the associated Journal Entry.
+- `TradeLogView` in `app/components/trade-journal.tsx` already has a row-level Delete button and receives `deletingId`, `saving`, and `onDelete`.
+- Root `TradeJournal` already has `handleDelete(trade)` that:
+  - uses `window.confirm`
+  - calls `DELETE /api/trades/${trade.id}`
+  - removes the trade from local state
+  - resets edit form if the deleted trade was being edited
+  - clears selected drawer state if the deleted trade was selected
+- `TradeDetailDrawer` currently only has Edit and Close buttons; it does not expose Delete.
+
+Recommended next implementation
+
+- Replace the current `window.confirm` flow with an in-app confirmation modal/dialog, or minimally keep `window.confirm` if you decide the existing table delete is sufficient. The acceptance criterion mentions confirmation UI, but the user waived screenshot only, not the UI itself.
+- Add delete affordance inside `TradeDetailDrawer` so the drawer flow can delete the selected trade, not just table rows.
+- Thread props through:
+  - `TradeDetailDrawer`: add `deleting`, `onDelete`
+  - `TradeLogView`: pass `deletingId === selectedTrade.id` to drawer and pass its `onDelete`
+- Consider adding `deleteCandidate` state in `TradeJournal`:
+  - table Delete and drawer Delete set the candidate
+  - modal Confirm calls the existing DELETE request logic
+  - modal Cancel clears the candidate
+- Keep post-delete state behavior:
+  - remove trade from `trades`
+  - reset form if `editingId` matches
+  - clear `selectedTradeId` if selected/deleted
+  - close confirmation state
+- Ensure errors surface somewhere visible. Existing `error` only displays on the Journal form, not the Trade Log view. If the delete button is on the Trade Log, add a small alert in `TradeLogView` or a shared surface so delete failures are visible while staying on the Trade Log.
+
+Suggested tests
+
+- Existing tests are mostly helper/validation tests. `testcases/trades.test.ts` already includes a declarative case stating `GET, PATCH, and DELETE /api/trades/[id]` should prevent access to another user’s trade.
+- Add focused tests only if practical within current test style:
+  - a helper/state test for removing a deleted trade and clearing selected/editing IDs, if you extract a small pure helper
+  - or update `tradeTestCases` expectation text if no route integration test harness exists
+- Run at least:
+  - `npm run lint`
+  - `npm test`
+
+Suggested skills
+
+- `mattpocock-skills:implement` or `implement`: for carrying the issue through code changes and verification.
+- `mattpocock-skills:tdd` or `tdd`: only if you choose to extract pure state helpers or add route-level tests first.
+- `mattpocock-skills:diagnosing-bugs` or `diagnosing-bugs`: only if delete behavior fails during verification.
+
+No visual checks needed
+
