@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useEffect, useState, type FormEvent } from "react";
 import {
+  Award,
   BarChart2,
   Bell,
   BookMarked,
   BookOpen,
   ChevronDown,
+  ChevronRight,
   Edit3,
   LayoutDashboard,
   List,
@@ -14,6 +16,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Target,
   TrendingUp,
   Trash2,
   X,
@@ -65,7 +68,7 @@ type PlaybookFormState = {
   name: string;
   description: string;
   color: string;
-  rules: string;
+  rules: string[];
 };
 
 type ApiIssue = {
@@ -206,16 +209,17 @@ function createEmptyPlaybookForm(): PlaybookFormState {
     name: "",
     description: "",
     color: "#6C5DD3",
-    rules: "",
+    rules: ["", "", "", ""],
   };
 }
 
 function playbookToForm(playbook: PlaybookDto): PlaybookFormState {
+  const rules = playbook.rules.length > 0 ? playbook.rules : ["", "", "", ""];
   return {
     name: playbook.name,
     description: playbook.description,
     color: playbook.color,
-    rules: playbook.rules.join("\n"),
+    rules,
   };
 }
 
@@ -686,10 +690,7 @@ function buildPlaybookPayload(
   const name = form.name.trim();
   const description = form.description.trim();
   const color = form.color.trim().toUpperCase();
-  const rules = form.rules
-    .split(/\r?\n/)
-    .map((rule) => rule.trim())
-    .filter(Boolean);
+  const rules = form.rules.map((r) => r.trim()).filter(Boolean);
 
   if (!name) {
     return { payload: null, error: "Playbook name is required." };
@@ -1619,6 +1620,8 @@ function AnalyticsView({
   );
 }
 
+const PLAYBOOK_COLORS = ["#6C5DD3", "#16A779", "#3B82F6", "#D99A20", "#E25555", "#8B5CF6"];
+
 function PlaybooksView({
   storedPlaybooks,
   trades,
@@ -1628,6 +1631,7 @@ function PlaybooksView({
   saving,
   deletingId,
   error,
+  showModal,
   onUpdateForm,
   onSubmit,
   onNew,
@@ -1635,6 +1639,7 @@ function PlaybooksView({
   onDeletePlaybook,
   onCancel,
   onEdit,
+  onLogTrade,
 }: {
   storedPlaybooks: PlaybookDto[];
   trades: TradeDto[];
@@ -1644,6 +1649,7 @@ function PlaybooksView({
   saving: boolean;
   deletingId: string | null;
   error: string | null;
+  showModal: boolean;
   onUpdateForm: <Key extends keyof PlaybookFormState>(
     key: Key,
     value: PlaybookFormState[Key]
@@ -1654,6 +1660,7 @@ function PlaybooksView({
   onDeletePlaybook: (playbook: PlaybookDto) => void;
   onCancel: () => void;
   onEdit: (trade: TradeDto) => void;
+  onLogTrade: (playbookId: string) => void;
 }) {
   const playbooks = useMemo(
     () => buildPlaybooks(storedPlaybooks, trades, currentDate),
@@ -1664,24 +1671,27 @@ function PlaybooksView({
     () => buildReturnDistribution(trades),
     [trades]
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => storedPlaybooks[0]?.id ?? null
+  );
+
+  const prevCountRef = useRef(storedPlaybooks.length);
+  useEffect(() => {
+    if (storedPlaybooks.length > prevCountRef.current) {
+      const newest = storedPlaybooks[storedPlaybooks.length - 1];
+      if (newest) setSelectedId(newest.id);
+    }
+    prevCountRef.current = storedPlaybooks.length;
+  }, [storedPlaybooks]);
+
   const selected =
-    playbooks.find((playbook) => playbook.id === selectedId) ??
-    playbooks[0] ??
-    null;
+    playbooks.find((playbook) => playbook.id === selectedId) ?? null;
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-[#F7F8FA]">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex items-center justify-between border-b border-[#E6E8EF] bg-white px-5 py-3">
-          <div>
-            <h2 className="text-[13px] font-semibold text-[#171923]">
-              Playbooks
-            </h2>
-            <p className="mt-1 text-[11px] text-[#697386]">
-              Repeatable setups derived from logged trades
-            </p>
-          </div>
+          <h2 className="text-[13px] font-semibold text-[#171923]">Playbooks</h2>
           <button
             type="button"
             onClick={onNew}
@@ -1692,110 +1702,7 @@ function PlaybooksView({
           </button>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-[14px] font-semibold text-[#171923]">
-                  {editingPlaybook ? "Edit Playbook" : "New Playbook"}
-                </h3>
-                <p className="mt-1 text-[11px] text-[#697386]">
-                  {editingPlaybook
-                    ? "Update the definition fields and Playbook Rules."
-                    : "Define the setup before assigning completed Trades."}
-                </p>
-              </div>
-              {editingPlaybook ? (
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  disabled={saving}
-                  className="flex h-8 items-center gap-1 rounded-md border border-[#E6E8EF] px-2.5 text-xs font-medium text-[#697386] transition hover:bg-[#F7F8FA] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <X size={13} aria-hidden="true" />
-                  Cancel
-                </button>
-              ) : null}
-            </div>
-
-            {error ? (
-              <p
-                role="alert"
-                className="mt-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700"
-              >
-                {error}
-              </p>
-            ) : null}
-
-            <form
-              className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,120px)]"
-              onSubmit={onSubmit}
-            >
-              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565]">
-                Name
-                <input
-                  value={form.name}
-                  onChange={(event) => onUpdateForm("name", event.target.value)}
-                  className="h-10 w-full min-w-0 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-                  maxLength={80}
-                  disabled={saving}
-                />
-              </label>
-
-              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565]">
-                Description
-                <input
-                  value={form.description}
-                  onChange={(event) =>
-                    onUpdateForm("description", event.target.value)
-                  }
-                  className="h-10 w-full min-w-0 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-                  maxLength={500}
-                  disabled={saving}
-                />
-              </label>
-
-              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565]">
-                Color
-                <input
-                  value={form.color}
-                  onChange={(event) => onUpdateForm("color", event.target.value)}
-                  className="h-10 w-full min-w-0 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm font-semibold text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-                  maxLength={7}
-                  disabled={saving}
-                />
-              </label>
-
-              <label className="grid min-w-0 gap-1 text-sm font-medium text-[#4B5565] lg:col-span-3">
-                Playbook Rules
-                <textarea
-                  value={form.rules}
-                  onChange={(event) => onUpdateForm("rules", event.target.value)}
-                  className="min-h-28 w-full min-w-0 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
-                  placeholder="One Playbook Rule per line"
-                  disabled={saving}
-                />
-              </label>
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-md bg-[#6C5DD3] px-4 text-sm font-semibold text-white transition hover:bg-[#5B4BC7] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#A0A7B8] lg:col-span-3"
-              >
-                {editingPlaybook ? (
-                  <Edit3 size={14} aria-hidden="true" />
-                ) : (
-                  <Plus size={14} aria-hidden="true" />
-                )}
-                {saving
-                  ? "Saving..."
-                  : editingPlaybook
-                    ? "Save Playbook"
-                    : "Create Playbook"}
-              </button>
-            </form>
-          </section>
-
+        <div className="flex-1 space-y-3 overflow-y-auto p-4" onClick={() => setSelectedId(null)}>
           {playbooks.length === 0 ? (
             <EmptyState
               title="No Playbooks yet"
@@ -1826,7 +1733,7 @@ function PlaybooksView({
                 <div className="flex items-start justify-between gap-4">
                   <button
                     type="button"
-                    onClick={() => setSelectedId(isSelected ? null : playbook.id)}
+                    onClick={(e) => { e.stopPropagation(); setSelectedId(isSelected ? null : playbook.id); }}
                     className="min-w-0 flex-1 text-left"
                   >
                     <div className="text-[14px] font-semibold text-[#171923]">
@@ -1867,7 +1774,7 @@ function PlaybooksView({
                         <Trash2 size={14} aria-hidden="true" />
                       )}
                     </button>
-                    <BookMarked
+                    <ChevronRight
                       size={15}
                       color={isSelected ? "#6C5DD3" : "#697386"}
                       aria-hidden="true"
@@ -1875,51 +1782,51 @@ function PlaybooksView({
                   </div>
                 </div>
 
-                <div className="mt-3 grid gap-3 sm:grid-cols-5">
-                  {[
-                    {
-                      label: "Win Rate",
-                      value:
-                        playbook.winRate === null
-                          ? "-"
-                          : formatPercent(playbook.winRate),
-                      color: winRatePct >= 65 ? "#16A779" : "#D99A20",
-                    },
-                    {
-                      label: "Avg Return",
-                      value: `${playbook.avgReturn >= 0 ? "+" : ""}${ratioFormatter.format(
-                        playbook.avgReturn
-                      )}%`,
-                      color: playbook.avgReturn >= 0 ? "#16A779" : "#E25555",
-                    },
-                    {
-                      label: "Avg R",
-                      value: `${ratioFormatter.format(playbook.avgRMultiple)}R`,
-                      color: playbook.avgRMultiple >= 1 ? "#16A779" : "#D99A20",
-                    },
-                    {
-                      label: "Trades",
-                      value: numberFormatter.format(playbook.totalTrades),
-                      color: "#171923",
-                    },
-                    {
-                      label: "Avg Hold",
-                      value: `${ratioFormatter.format(playbook.avgHoldDays)}d`,
-                      color: "#171923",
-                    },
-                  ].map((metric) => (
-                    <div key={metric.label}>
-                      <div className="text-[10px] text-[#697386]">
-                        {metric.label}
+                <div className="mt-3 flex items-end justify-between gap-4">
+                  <div className="grid grid-cols-4 gap-8">
+                    {[
+                      {
+                        label: "Win Rate",
+                        value:
+                          playbook.winRate === null
+                            ? "-"
+                            : formatPercent(playbook.winRate),
+                        color: winRatePct >= 65 ? "#16A779" : "#D99A20",
+                      },
+                      {
+                        label: "Avg Return",
+                        value: `${playbook.avgReturn >= 0 ? "+" : ""}${ratioFormatter.format(
+                          playbook.avgReturn
+                        )}%`,
+                        color: playbook.avgReturn >= 0 ? "#16A779" : "#E25555",
+                      },
+                      {
+                        label: "Avg R",
+                        value: `${ratioFormatter.format(playbook.avgRMultiple)}R`,
+                        color: playbook.avgRMultiple >= 1 ? "#16A779" : "#D99A20",
+                      },
+                      {
+                        label: "Trades",
+                        value: numberFormatter.format(playbook.totalTrades),
+                        color: "#171923",
+                      },
+                    ].map((metric) => (
+                      <div key={metric.label}>
+                        <div className="text-[10px] text-[#697386]">{metric.label}</div>
+                        <div className="mt-0.5 text-[16px] font-bold" style={{ color: metric.color }}>
+                          {metric.value}
+                        </div>
                       </div>
-                      <div
-                        className="mt-0.5 text-[16px] font-bold"
-                        style={{ color: metric.color }}
-                      >
-                        {metric.value}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-[#16A779]">
+                      Best: {playbook.bestTrade}
+                    </span>
+                    <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-medium text-[#E25555]">
+                      Worst: {playbook.worstTrade}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="mt-3 h-1.5 rounded-full bg-[#E6E8EF]">
@@ -1935,62 +1842,166 @@ function PlaybooksView({
             );
           })}
 
-          <div className="grid gap-3 xl:grid-cols-2">
-            <AppCard>
-              <SectionTitle>Monthly Returns</SectionTitle>
-              {monthlyReturns.length === 0 ? (
-                <div className="flex h-36 items-center justify-center text-sm text-[#697386]">
-                  No closed monthly returns yet.
+        </div>
+      </div>
+
+      {showModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          onClick={(e) => e.target === e.currentTarget && onCancel()}
+        >
+          <div className="flex w-full max-w-[540px] flex-col rounded-2xl bg-white shadow-2xl" style={{ maxHeight: "88vh" }}>
+            <div className="flex shrink-0 items-center justify-between border-b border-[#E6E8EF] px-6 py-5">
+              <div>
+                <p className="text-[20px] font-bold text-[#171923]">
+                  {editingPlaybook ? "Edit Playbook" : "New Playbook"}
+                </p>
+                <p className="mt-0.5 text-[13px] text-[#697386]">
+                  {editingPlaybook ? "Update the definition fields and rules." : "Define a repeatable setup strategy"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={saving}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#F7F8FA] text-[#697386] hover:bg-[#EEF0F5] disabled:opacity-50"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
+              <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+                {error ? (
+                  <p role="alert" className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {error}
+                  </p>
+                ) : null}
+
+                <div className="flex items-start gap-4">
+                  <label className="grid min-w-0 flex-1 gap-1.5 text-[13px] font-semibold text-[#171923]">
+                    <span>Playbook Name <span className="text-[#E25555]">*</span></span>
+                    <input
+                      value={form.name}
+                      onChange={(e) => onUpdateForm("name", e.target.value)}
+                      placeholder="e.g. Breakout Setup"
+                      maxLength={80}
+                      disabled={saving}
+                      className="h-10 w-full rounded-xl border border-[#E6E8EF] bg-[#F7F8FA] px-3 text-[13px] text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                    />
+                  </label>
+                  <div className="grid gap-1.5 text-[13px] font-semibold text-[#171923]">
+                    Color
+                    <div className="flex h-10 items-center gap-2">
+                      {PLAYBOOK_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => onUpdateForm("color", c)}
+                          disabled={saving}
+                          className="h-7 w-7 shrink-0 rounded-full transition disabled:opacity-50"
+                          style={{
+                            background: c,
+                            outline: form.color.toUpperCase() === c.toUpperCase() ? `2px solid #171923` : "none",
+                            outlineOffset: 2,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <>
-                  <MiniBarChart
-                    data={monthlyReturns}
-                    valueKey="returnPct"
-                    labelKey="month"
+
+                <label className="grid gap-1.5 text-[13px] font-semibold text-[#171923]">
+                  <span>Description <span className="text-[#E25555]">*</span></span>
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => onUpdateForm("description", e.target.value)}
+                    placeholder="Describe the setup, what you're looking for, and when to use it..."
+                    rows={4}
+                    maxLength={500}
+                    disabled={saving}
+                    className="w-full resize-none rounded-xl border border-[#E6E8EF] bg-[#F7F8FA] px-3 py-2.5 text-[13px] text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                   />
-                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
-                    {monthlyReturns.map((month) => (
-                      <div key={month.month} className="rounded-lg bg-[#F7F8FA] p-2">
-                        <p className="text-[10px] text-[#697386]">{month.month}</p>
-                        <p
-                          className={`mt-1 text-[13px] font-semibold ${getMetricValueClass(
-                            getMoneyTone(month.returnPct)
-                          )}`}
+                </label>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] font-semibold text-[#171923]">Entry Rules</span>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => onUpdateForm("rules", [...form.rules, ""])}
+                      className="flex items-center gap-1 text-[12px] font-semibold text-[#6C5DD3] hover:opacity-75 disabled:opacity-50"
+                    >
+                      <Plus size={13} aria-hidden="true" />
+                      Add Rule
+                    </button>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {form.rules.map((rule, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-bold text-white"
+                          style={{ background: form.color }}
                         >
-                          {month.returnPct >= 0 ? "+" : ""}
-                          {ratioFormatter.format(month.returnPct)}%
-                        </p>
+                          {i + 1}
+                        </div>
+                        <input
+                          value={rule}
+                          onChange={(e) => {
+                            const next = [...form.rules];
+                            next[i] = e.target.value;
+                            onUpdateForm("rules", next);
+                          }}
+                          placeholder={`Rule ${i + 1}...`}
+                          disabled={saving}
+                          className="h-10 min-w-0 flex-1 rounded-xl border border-[#E6E8EF] bg-[#F7F8FA] px-3 text-[13px] text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                        />
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => onUpdateForm("rules", form.rules.filter((_, j) => j !== i))}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#E25555] hover:bg-red-50 disabled:opacity-50"
+                          aria-label={`Remove rule ${i + 1}`}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />
+                        </button>
                       </div>
                     ))}
                   </div>
-                </>
-              )}
-            </AppCard>
-
-            <AppCard>
-              <SectionTitle>Return Distribution</SectionTitle>
-              <MiniBarChart
-                data={returnDistribution}
-                valueKey="count"
-                labelKey="range"
-                positiveColor="#6C5DD3"
-                negativeColor="#6C5DD3"
-              />
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {returnDistribution.map((bucket) => (
-                  <div key={bucket.range} className="rounded-lg bg-[#F7F8FA] p-2">
-                    <p className="text-[10px] text-[#697386]">{bucket.range}</p>
-                    <p className="mt-1 text-[13px] font-semibold text-[#171923]">
-                      {numberFormatter.format(bucket.count)}
-                    </p>
-                  </div>
-                ))}
+                </div>
               </div>
-            </AppCard>
+
+              <div className="flex shrink-0 items-center justify-between border-t border-[#E6E8EF] px-6 py-4">
+                <p className="text-[12px] text-[#697386]">
+                  {form.name.trim() && form.description.trim()
+                    ? <span className="font-semibold text-[#171923]">{form.name.trim()}</span>
+                    : "Fill in name and description to continue"
+                  }
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    disabled={saving}
+                    className="h-10 rounded-xl border border-[#E6E8EF] px-5 text-[13px] font-semibold text-[#171923] transition hover:bg-[#F7F8FA] disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving || !form.name.trim() || !form.description.trim()}
+                    className="flex h-10 items-center gap-1.5 rounded-xl bg-[#6C5DD3] px-5 text-[13px] font-semibold text-white transition hover:bg-[#5B4BC7] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus size={13} aria-hidden="true" />
+                    {saving ? "Saving…" : editingPlaybook ? "Save Playbook" : "Create Playbook"}
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
+      ) : null}
 
       {selected ? (
         <aside className="hidden w-[340px] shrink-0 overflow-y-auto border-l border-[#E6E8EF] bg-white lg:block">
@@ -2005,97 +2016,115 @@ function PlaybooksView({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {[
-                {
-                  label: "Best Trade",
-                  value: selected.bestTrade,
-                  tone: "profit" as const,
-                },
-                {
-                  label: "Worst Trade",
-                  value: selected.worstTrade,
-                  tone: "loss" as const,
-                },
-                {
-                  label: "Total Trades",
-                  value: numberFormatter.format(selected.totalTrades),
-                  tone: "neutral" as const,
-                },
-                {
-                  label: "Avg Hold",
-                  value: `${ratioFormatter.format(selected.avgHoldDays)} days`,
-                  tone: "neutral" as const,
-                },
-              ].map((metric) => (
-                <div key={metric.label} className="rounded-lg bg-[#F7F8FA] p-3">
-                  <p className="text-[10px] text-[#697386]">{metric.label}</p>
-                  <p
-                    className={`mt-1 truncate text-[13px] font-semibold ${getMetricValueClass(
-                      metric.tone
-                    )}`}
-                  >
-                    {metric.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
-                Entry Rules
-              </div>
-              <div className="space-y-1.5">
-                {selected.rules.map((rule, index) => (
-                  <div key={rule} className="flex items-start gap-2 text-[12px]">
-                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[9px] font-bold text-white">
-                      {index + 1}
-                    </span>
-                    <span className="leading-5 text-[#171923]">{rule}</span>
+              {(() => {
+                const winRatePct = selected.winRate === null ? 0 : selected.winRate * 100;
+                return [
+                  {
+                    icon: TrendingUp,
+                    label: "Win Rate",
+                    value: selected.winRate === null ? "-" : formatPercent(selected.winRate),
+                    color: winRatePct >= 65 ? "#16A779" : "#D99A20",
+                  },
+                  {
+                    icon: Target,
+                    label: "Avg Return",
+                    value: `${selected.avgReturn >= 0 ? "+" : ""}${ratioFormatter.format(selected.avgReturn)}%`,
+                    color: selected.avgReturn >= 0 ? "#16A779" : "#E25555",
+                  },
+                  {
+                    icon: Award,
+                    label: "Avg R Multiple",
+                    value: `${ratioFormatter.format(selected.avgRMultiple)}R`,
+                    color: selected.avgRMultiple >= 1.5 ? "#16A779" : "#D99A20",
+                  },
+                  {
+                    icon: TrendingUp,
+                    label: "Total Trades",
+                    value: numberFormatter.format(selected.totalTrades),
+                    color: "#171923",
+                  },
+                ].map(({ icon: Icon, label, value, color }) => (
+                  <div key={label} className="rounded-xl bg-[#F7F8FA] p-3">
+                    <p className="mb-0.5 text-[10px] text-[#697386]">{label}</p>
+                    <p className="text-[18px] font-bold" style={{ color }}>{value}</p>
                   </div>
-                ))}
-              </div>
+                ));
+              })()}
             </div>
+
+            {selected.rules.length > 0 ? (
+              <div>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
+                  Entry Rules
+                </div>
+                <div className="space-y-1.5">
+                  {selected.rules.map((rule, index) => (
+                    <div key={rule} className="flex items-start gap-2 text-[12px]">
+                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[9px] font-bold text-white">
+                        {index + 1}
+                      </span>
+                      <span className="leading-5 text-[#171923]">{rule}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {selected.trades.length > 0 ? (
+              <div>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
+                  Attached Trades
+                </div>
+                <div className="space-y-1.5">
+                  {selected.trades.slice(0, 6).map((trade) => {
+                    const pnl = getTradePnl(trade);
+                    return (
+                      <button
+                        key={trade.id}
+                        type="button"
+                        onClick={() => onEdit(trade)}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#F7F8FA] p-2 text-left"
+                      >
+                        <div className="min-w-0">
+                          <span className="text-[12px] font-semibold text-[#171923]">{trade.symbol}</span>
+                          <span className="ml-2 text-[11px] text-[#697386]">{formatShortDate(trade.openedAt)}</span>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-[12px] font-semibold ${getMetricValueClass(getMoneyTone(pnl))}`}>
+                            {formatMoney(pnl)}
+                          </div>
+                          <div className="text-[10px] text-[#697386]">{formatRatio(trade.rMultiple)}R</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             <div>
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#697386]">
-                Attached Trades
+                Performance
               </div>
-              <div className="space-y-1.5">
-                {selected.trades.slice(0, 6).map((trade) => {
-                  const pnl = getTradePnl(trade);
-
-                  return (
-                    <button
-                      key={trade.id}
-                      type="button"
-                      onClick={() => onEdit(trade)}
-                      className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#F7F8FA] p-2 text-left"
-                    >
-                      <div className="min-w-0">
-                        <span className="text-[12px] font-semibold text-[#171923]">
-                          {trade.symbol}
-                        </span>
-                        <span className="ml-2 text-[11px] text-[#697386]">
-                          {formatShortDate(trade.openedAt)}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <div
-                          className={`text-[12px] font-semibold ${getMetricValueClass(
-                            getMoneyTone(pnl)
-                          )}`}
-                        >
-                          {formatMoney(pnl)}
-                        </div>
-                        <div className="text-[10px] text-[#697386]">
-                          {formatRatio(trade.rMultiple)}R
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="space-y-2">
+                <div className="flex justify-between text-[12px]">
+                  <span className="text-[#697386]">Best Trade</span>
+                  <span className="font-semibold text-[#16A779]">{selected.bestTrade}</span>
+                </div>
+                <div className="flex justify-between text-[12px]">
+                  <span className="text-[#697386]">Worst Trade</span>
+                  <span className="font-semibold text-[#E25555]">{selected.worstTrade}</span>
+                </div>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => onLogTrade(selected.id)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#6C5DD3] py-2 text-[12px] font-medium text-white transition hover:bg-[#5B4BC7]"
+            >
+              Log Trade with This Playbook
+            </button>
           </div>
         </aside>
       ) : null}
@@ -2739,9 +2768,9 @@ function TradeFormView({
                   <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
                     Rules
                     <textarea
-                      value={inlinePlaybookForm.rules}
+                      value={inlinePlaybookForm.rules.join("\n")}
                       onChange={(event) =>
-                        onUpdateInlinePlaybookForm("rules", event.target.value)
+                        onUpdateInlinePlaybookForm("rules", event.target.value.split("\n"))
                       }
                       className="min-h-24 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
                       placeholder="One Playbook Rule per line"
@@ -2941,6 +2970,7 @@ export default function TradeJournal({
     useState<PlaybookFormState>(() => createEmptyPlaybookForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingPlaybookId, setEditingPlaybookId] = useState<string | null>(null);
+  const [showPlaybookModal, setShowPlaybookModal] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [tradeSearch, setTradeSearch] = useState("");
   const [resultFilter, setResultFilter] =
@@ -3057,6 +3087,7 @@ export default function TradeJournal({
     setEditingPlaybookId(null);
     setPlaybookForm(createEmptyPlaybookForm());
     setPlaybookError(null);
+    setShowPlaybookModal(false);
   }
 
   function openInlinePlaybook() {
@@ -3070,8 +3101,15 @@ export default function TradeJournal({
     setInlinePlaybookError(null);
   }
 
+  function openTradeForPlaybook(playbookId: string) {
+    resetForm();
+    setForm((prev) => ({ ...prev, playbookId }));
+    setActiveView("journal");
+  }
+
   function openNewPlaybook() {
     resetPlaybookForm();
+    setShowPlaybookModal(true);
     setActiveView("playbooks");
   }
 
@@ -3079,6 +3117,7 @@ export default function TradeJournal({
     setEditingPlaybookId(playbook.id);
     setPlaybookForm(playbookToForm(playbook));
     setPlaybookError(null);
+    setShowPlaybookModal(true);
     setActiveView("playbooks");
   }
 
@@ -3371,6 +3410,7 @@ export default function TradeJournal({
               saving={playbookSaving}
               deletingId={deletingPlaybookId}
               error={playbookError}
+              showModal={showPlaybookModal}
               onUpdateForm={updatePlaybookForm}
               onSubmit={handlePlaybookSubmit}
               onNew={openNewPlaybook}
@@ -3378,6 +3418,7 @@ export default function TradeJournal({
               onDeletePlaybook={handleDeletePlaybook}
               onCancel={resetPlaybookForm}
               onEdit={startEdit}
+              onLogTrade={openTradeForPlaybook}
             />
           ) : null}
 
