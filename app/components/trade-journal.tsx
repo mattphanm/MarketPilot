@@ -720,6 +720,150 @@ function DirectionPill({ side }: { side: TradeSide }) {
   );
 }
 
+function TradeDetailDrawer({
+  trade,
+  playbook,
+  onClose,
+}: {
+  trade: TradeDto;
+  playbook: PlaybookDto | null;
+  onClose: () => void;
+}) {
+  const pnl = getTradePnl(trade);
+  const playbookName = playbook?.name ?? "Unassigned";
+  const factRows = [
+    ["Entry Time", formatDate(trade.openedAt)],
+    ["Symbol", trade.symbol],
+    ["Direction", getDirectionLabel(trade.side)],
+    ["Risk Dollars", formatMoney(trade.riskDollars)],
+    ["R Multiple", `${formatRatio(trade.rMultiple)}R`],
+    ["Realized P&L", formatMoney(pnl)],
+    ["Outcome Status", getTradeStatusLabel(trade)],
+    ["Playbook", playbookName],
+  ];
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${trade.symbol} trade detail`}
+      className="fixed inset-0 z-40 flex justify-end bg-[#171923]/20"
+    >
+      <button
+        type="button"
+        aria-label="Close trade detail drawer"
+        onClick={onClose}
+        className="hidden flex-1 cursor-default lg:block"
+      />
+      <aside className="flex h-full w-full max-w-[440px] flex-col border-l border-[#E6E8EF] bg-white shadow-[-18px_0_40px_rgba(17,24,39,0.12)] sm:max-w-[420px]">
+        <div className="flex items-start justify-between gap-4 border-b border-[#E6E8EF] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase text-[#697386]">
+              Trade Detail
+            </p>
+            <div className="mt-2 flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-[22px] font-bold leading-tight text-[#171923]">
+                {trade.symbol}
+              </h2>
+              <DirectionPill side={trade.side} />
+              <StatusPill trade={trade} />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close trade detail drawer"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#E6E8EF] text-[#697386] transition hover:bg-[#F7F8FA] hover:text-[#171923]"
+          >
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              {
+                label: "Realized P&L",
+                value: formatWholeDollar(pnl),
+                tone: getMoneyTone(pnl),
+              },
+              {
+                label: "R Multiple",
+                value: `${formatRatio(trade.rMultiple)}R`,
+                tone: getMoneyTone(trade.rMultiple),
+              },
+              {
+                label: "Risk",
+                value: formatCompactMoney(trade.riskDollars),
+                tone: "neutral" as const,
+              },
+            ] satisfies Array<{ label: string; value: string; tone: MoneyTone }>).map((item) => (
+              <div
+                key={item.label}
+                className="min-w-0 rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3"
+              >
+                <p className="truncate text-[10px] font-medium text-[#697386]">
+                  {item.label}
+                </p>
+                <p
+                  className={`mt-1 truncate text-[14px] font-bold ${getMetricValueClass(
+                    item.tone
+                  )}`}
+                >
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <section className="mt-5">
+            <h3 className="text-[12px] font-semibold text-[#171923]">
+              Completed Trade Facts
+            </h3>
+            <div className="mt-2 divide-y divide-[#F1F3F7] rounded-lg border border-[#E6E8EF] bg-white">
+              {factRows.map(([label, value]) => (
+                <div
+                  key={label}
+                  className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[12px]"
+                >
+                  <span className="text-[#697386]">{label}</span>
+                  <span
+                    className={`min-w-0 text-right font-medium ${
+                      label === "Realized P&L"
+                        ? getMetricValueClass(getMoneyTone(pnl))
+                        : "text-[#171923]"
+                    }`}
+                  >
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-5">
+            <h3 className="text-[12px] font-semibold text-[#171923]">
+              Trade Idea
+            </h3>
+            <div className="mt-2 rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[12px] leading-5 text-[#171923]">
+              {trade.journalEntry?.tradeIdea || "No trade idea captured."}
+            </div>
+          </section>
+
+          <section className="mt-5">
+            <h3 className="text-[12px] font-semibold text-[#171923]">
+              Confluences
+            </h3>
+            <div className="mt-2 whitespace-pre-wrap rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[12px] leading-5 text-[#171923]">
+              {trade.journalEntry?.confluences || "No confluences captured."}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function SortableTradeHeader({
   label,
   align = "left",
@@ -2188,6 +2332,7 @@ function SettingsView({
 
 function TradeLogView({
   trades,
+  playbooks,
   search,
   resultFilter,
   sideFilter,
@@ -2205,6 +2350,7 @@ function TradeLogView({
   onAddTrade,
 }: {
   trades: TradeDto[];
+  playbooks: PlaybookDto[];
   search: string;
   resultFilter: TradeResultFilter;
   sideFilter: TradeSideFilter;
@@ -2228,6 +2374,9 @@ function TradeLogView({
   const wins = trades.filter((trade) => getTradePnl(trade) > 0).length;
   const winRate = trades.length > 0 ? wins / trades.length : null;
   const hasActiveSearch = search.trim().length > 0;
+  const selectedPlaybook =
+    playbooks.find((playbook) => playbook.id === selectedTrade?.playbookId) ??
+    null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -2498,101 +2647,15 @@ function TradeLogView({
             </table>
           </div>
 
-          {selectedTrade ? (
-            <aside className="hidden w-[300px] shrink-0 overflow-y-auto border-l border-[#E6E8EF] bg-white p-4 lg:block">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[22px] font-bold leading-tight text-[#171923]">
-                    {selectedTrade.symbol}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <StatusPill trade={selectedTrade} />
-                    <span className="text-[11px] text-[#697386]">
-                      {getDirectionLabel(selectedTrade.side)}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onSelectTrade(null)}
-                  className="text-[12px] text-[#697386]"
-                >
-                  x
-                </button>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                {([
-                  {
-                    label: "P&L",
-                    value: formatMoney(getTradePnl(selectedTrade)),
-                    tone: getMoneyTone(getTradePnl(selectedTrade)),
-                  },
-                  {
-                    label: "R Multiple",
-                    value: `${formatRatio(selectedTrade.rMultiple)}R`,
-                    tone: getMoneyTone(selectedTrade.rMultiple),
-                  },
-                  {
-                    label: "Risk",
-                    value: formatCompactMoney(selectedTrade.riskDollars),
-                    tone: "neutral" as const,
-                  },
-                  {
-                    label: "Playbook",
-                    value: "Assigned",
-                    tone: "neutral" as const,
-                  },
-                ] satisfies Array<{ label: string; value: string; tone: MoneyTone }>).map((item) => (
-                  <div key={item.label} className="rounded-lg bg-[#F7F8FA] p-2">
-                    <p className="text-[10px] text-[#697386]">{item.label}</p>
-                    <p
-                      className={`mt-1 truncate text-[13px] font-semibold ${getMetricValueClass(
-                        item.tone
-                      )}`}
-                    >
-                      {item.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4 space-y-2 text-[12px]">
-                {[
-                  ["Trade Date", formatDate(selectedTrade.openedAt)],
-                  ["Risk", formatMoney(selectedTrade.riskDollars)],
-                  ["R Multiple", `${formatRatio(selectedTrade.rMultiple)}R`],
-                  ["P&L", formatMoney(getTradePnl(selectedTrade))],
-                ].map(([label, value]) => (
-                  <div key={label} className="flex justify-between gap-3">
-                    <span className="text-[#697386]">{label}</span>
-                    <span className="text-right font-medium text-[#171923]">
-                      {value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4">
-                <p className="mb-1 text-[11px] font-medium text-[#697386]">Trade Idea</p>
-                <div className="rounded-lg bg-[#F7F8FA] p-3 text-[12px] leading-5 text-[#171923]">
-                  {selectedTrade.journalEntry?.tradeIdea || "No trade idea captured."}
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <p className="mb-1 text-[11px] font-medium text-[#697386]">
-                  Confluences
-                </p>
-                <div className="rounded-lg bg-[#F7F8FA] p-3 text-[12px] leading-5 text-[#171923]">
-                  {selectedTrade.journalEntry?.confluences ||
-                    "No confluences captured."}
-                </div>
-              </div>
-            </aside>
-          ) : null}
         </div>
       )}
+      {selectedTrade ? (
+        <TradeDetailDrawer
+          trade={selectedTrade}
+          playbook={selectedPlaybook}
+          onClose={() => onSelectTrade(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -3406,6 +3469,7 @@ export default function TradeJournal({
           {activeView === "trades" ? (
             <TradeLogView
               trades={filteredTrades}
+              playbooks={playbooks}
               search={tradeSearch}
               resultFilter={resultFilter}
               sideFilter={sideFilter}
