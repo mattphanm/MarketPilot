@@ -107,6 +107,12 @@ const moneyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+const wholeDollarFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
 const numberFormatter = new Intl.NumberFormat("en-US");
 
 const percentFormatter = new Intl.NumberFormat("en-US", {
@@ -272,6 +278,10 @@ function formatMoney(value: number) {
   return moneyFormatter.format(value);
 }
 
+function formatWholeDollar(value: number) {
+  return wholeDollarFormatter.format(value);
+}
+
 function formatCompactMoney(value: number) {
   const sign = value < 0 ? "-" : "";
   const absoluteValue = Math.abs(value);
@@ -382,7 +392,7 @@ function getTradeStatusLabel(trade: TradeDto) {
     return "LOSS";
   }
 
-  return "FLAT";
+  return "BE";
 }
 
 function getDirectionLabel(side: TradeSide) {
@@ -2419,12 +2429,14 @@ function TradeLogView({
                       </td>
                       <td
                         className={`px-3 py-2 text-right text-[12px] font-semibold ${
-                          pnl >= 0
+                          pnl > 0
                               ? "text-[#16A779]"
-                              : "text-[#E25555]"
+                              : pnl < 0
+                              ? "text-[#E25555]"
+                              : "text-[#D99A20]"
                         }`}
                       >
-                        {formatMoney(pnl)}
+                        {formatWholeDollar(pnl)}
                       </td>
                       <td className="px-3 py-2">
                         <StatusPill trade={trade} />
