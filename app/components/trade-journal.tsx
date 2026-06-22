@@ -723,12 +723,16 @@ function DirectionPill({ side }: { side: TradeSide }) {
 function TradeDetailDrawer({
   trade,
   playbook,
+  deleting,
   onEdit,
+  onDelete,
   onClose,
 }: {
   trade: TradeDto;
   playbook: PlaybookDto | null;
+  deleting: boolean;
   onEdit: (trade: TradeDto) => void;
+  onDelete: (trade: TradeDto) => void;
   onClose: () => void;
 }) {
   const pnl = getTradePnl(trade);
@@ -774,9 +778,19 @@ function TradeDetailDrawer({
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
+              onClick={() => onDelete(trade)}
+              disabled={deleting}
+              aria-label={`Delete ${trade.symbol} trade`}
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-red-100 text-[#E25555] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#E25555]/30"
+            >
+              <Trash2 size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
               onClick={() => onEdit(trade)}
+              disabled={deleting}
               aria-label={`Edit ${trade.symbol} trade`}
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E6E8EF] text-[#697386] transition hover:bg-[#F7F8FA] hover:text-[#171923] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E6E8EF] text-[#697386] transition hover:bg-[#F7F8FA] hover:text-[#171923] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
             >
               <Edit3 size={14} aria-hidden="true" />
             </button>
@@ -932,6 +946,77 @@ function EmptyState({
       <div>
         <p className="text-sm font-semibold text-[#171923]">{title}</p>
         <p className="mt-1 max-w-sm text-xs leading-5 text-[#697386]">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+function DeleteTradeDialog({
+  trade,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  trade: TradeDto;
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-trade-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !deleting) {
+          onCancel();
+        }
+      }}
+    >
+      <div className="w-full max-w-[420px] rounded-lg bg-white shadow-2xl">
+        <div className="border-b border-[#E6E8EF] px-5 py-4">
+          <p
+            id="delete-trade-title"
+            className="text-[17px] font-bold text-[#171923]"
+          >
+            Delete {trade.symbol} trade?
+          </p>
+          <p className="mt-1 text-[13px] leading-5 text-[#697386]">
+            This removes the completed trade and its journal entry from your
+            Trade Log.
+          </p>
+        </div>
+        <div className="px-5 py-4 text-[12px] text-[#4B5565]">
+          <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 rounded-md border border-[#E6E8EF] bg-[#F7F8FA] p-3">
+            <span className="text-[#697386]">Opened</span>
+            <span className="text-right font-medium text-[#171923]">
+              {formatDate(trade.openedAt)}
+            </span>
+            <span className="text-[#697386]">Result</span>
+            <span className="text-right font-medium text-[#171923]">
+              {getTradeStatusLabel(trade)}
+            </span>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[#E6E8EF] px-5 py-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={deleting}
+            className="h-9 rounded-md border border-[#E6E8EF] px-3 text-[12px] font-medium text-[#697386] transition hover:bg-[#F7F8FA] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={deleting}
+            className="h-9 rounded-md bg-[#E25555] px-3 text-[12px] font-semibold text-white transition hover:bg-[#C83F3F] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {deleting ? "Deleting" : "Delete Trade"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2351,6 +2436,7 @@ function TradeLogView({
   activeSort,
   selectedTrade,
   deletingId,
+  error,
   saving,
   onSearchChange,
   onResultFilterChange,
@@ -2369,6 +2455,7 @@ function TradeLogView({
   activeSort: TradeSort;
   selectedTrade: TradeDto | null;
   deletingId: string | null;
+  error: string | null;
   saving: boolean;
   onSearchChange: (value: string) => void;
   onResultFilterChange: (value: TradeResultFilter) => void;
@@ -2492,6 +2579,15 @@ function TradeLogView({
           Add Trade
         </button>
       </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="mx-4 mt-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700 lg:mx-5"
+        >
+          {error}
+        </p>
+      ) : null}
 
       {trades.length === 0 ? (
         <div className="p-4 lg:p-5">
@@ -2665,7 +2761,9 @@ function TradeLogView({
         <TradeDetailDrawer
           trade={selectedTrade}
           playbook={selectedPlaybook}
+          deleting={deletingId === selectedTrade.id}
           onEdit={onEdit}
+          onDelete={onDelete}
           onClose={() => onSelectTrade(null)}
         />
       ) : null}
@@ -3088,6 +3186,7 @@ export default function TradeJournal({
   });
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<TradeDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playbookSaving, setPlaybookSaving] = useState(false);
   const [inlinePlaybookSaving, setInlinePlaybookSaving] = useState(false);
@@ -3404,11 +3503,17 @@ export default function TradeJournal({
     }
   }
 
-  async function handleDelete(trade: TradeDto) {
-    if (!window.confirm(`Delete ${trade.symbol} trade?`)) {
+  function requestDelete(trade: TradeDto) {
+    setDeleteCandidate(trade);
+    setError(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteCandidate) {
       return;
     }
 
+    const trade = deleteCandidate;
     setDeletingId(trade.id);
     setError(null);
 
@@ -3435,6 +3540,8 @@ export default function TradeJournal({
       if (selectedTradeId === trade.id) {
         setSelectedTradeId(null);
       }
+
+      setDeleteCandidate(null);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -3489,6 +3596,7 @@ export default function TradeJournal({
               activeSort={tradeSort}
               selectedTrade={selectedTrade}
               deletingId={deletingId}
+              error={error}
               saving={saving}
               onSearchChange={setTradeSearch}
               onResultFilterChange={setResultFilter}
@@ -3496,7 +3604,7 @@ export default function TradeJournal({
               onSortChange={updateTradeSort}
               onSelectTrade={(trade) => setSelectedTradeId(trade?.id ?? null)}
               onEdit={startEdit}
-              onDelete={handleDelete}
+              onDelete={requestDelete}
               onAddTrade={openNewTrade}
             />
           ) : null}
@@ -3564,6 +3672,14 @@ export default function TradeJournal({
           ) : null}
         </div>
       </main>
+      {deleteCandidate ? (
+        <DeleteTradeDialog
+          trade={deleteCandidate}
+          deleting={deletingId === deleteCandidate.id}
+          onCancel={() => setDeleteCandidate(null)}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
     </div>
   );
 }
