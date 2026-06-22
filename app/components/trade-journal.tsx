@@ -7,6 +7,7 @@ import {
   BookMarked,
   BookOpen,
   ChevronDown,
+  Edit3,
   LayoutDashboard,
   List,
   Plus,
@@ -14,6 +15,8 @@ import {
   Search,
   Settings,
   TrendingUp,
+  Trash2,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { signOutUser } from "@/app/actions/auth";
@@ -733,6 +736,44 @@ function buildPayload(
   }
 
   return { payload, error: null };
+}
+
+function buildPlaybookPayload(
+  form: PlaybookFormState
+): { payload: PlaybookPayload; error: null } | { payload: null; error: string } {
+  const name = form.name.trim();
+  const description = form.description.trim();
+  const color = form.color.trim().toUpperCase();
+  const rules = form.rules
+    .split(/\r?\n/)
+    .map((rule) => rule.trim())
+    .filter(Boolean);
+
+  if (!name) {
+    return { payload: null, error: "Playbook name is required." };
+  }
+
+  if (!description) {
+    return { payload: null, error: "Playbook description is required." };
+  }
+
+  if (!/^#[0-9A-F]{6}$/.test(color)) {
+    return { payload: null, error: "Color must be a hex value like #6C5DD3." };
+  }
+
+  if (rules.length === 0) {
+    return { payload: null, error: "At least one Playbook Rule is required." };
+  }
+
+  return {
+    payload: {
+      name,
+      description,
+      color,
+      rules,
+    },
+    error: null,
+  };
 }
 
 function MetricCard({
@@ -1644,17 +1685,44 @@ function AnalyticsView({
 }
 
 function PlaybooksView({
+  storedPlaybooks,
   trades,
   currentDate,
+  form,
+  editingPlaybook,
+  saving,
+  deletingId,
+  error,
+  onUpdateForm,
+  onSubmit,
+  onNew,
+  onEditPlaybook,
+  onDeletePlaybook,
+  onCancel,
   onEdit,
 }: {
+  storedPlaybooks: PlaybookDto[];
   trades: TradeDto[];
   currentDate: Date;
+  form: PlaybookFormState;
+  editingPlaybook: PlaybookDto | null;
+  saving: boolean;
+  deletingId: string | null;
+  error: string | null;
+  onUpdateForm: <Key extends keyof PlaybookFormState>(
+    key: Key,
+    value: PlaybookFormState[Key]
+  ) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onNew: () => void;
+  onEditPlaybook: (playbook: PlaybookDto) => void;
+  onDeletePlaybook: (playbook: PlaybookDto) => void;
+  onCancel: () => void;
   onEdit: (trade: TradeDto) => void;
 }) {
   const playbooks = useMemo(
-    () => buildPlaybooks(trades, currentDate),
-    [currentDate, trades]
+    () => buildPlaybooks(storedPlaybooks, trades, currentDate),
+    [currentDate, storedPlaybooks, trades]
   );
   const monthlyReturns = useMemo(() => buildMonthlyReturns(trades), [trades]);
   const returnDistribution = useMemo(
@@ -1666,17 +1734,6 @@ function PlaybooksView({
     playbooks.find((playbook) => playbook.id === selectedId) ??
     playbooks[0] ??
     null;
-
-  if (playbooks.length === 0) {
-    return (
-      <div className="p-4 lg:p-5">
-        <EmptyState
-          title="No playbooks yet"
-          body="Add trades to derive long, short, and open-review playbooks from your history."
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-[#F7F8FA]">
@@ -1692,6 +1749,7 @@ function PlaybooksView({
           </div>
           <button
             type="button"
+            onClick={onNew}
             className="flex h-8 items-center gap-1.5 rounded-lg bg-[#6C5DD3] px-3 text-[12px] font-medium text-white"
           >
             <Plus size={12} aria-hidden="true" />
@@ -1700,15 +1758,127 @@ function PlaybooksView({
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[14px] font-semibold text-[#171923]">
+                  {editingPlaybook ? "Edit Playbook" : "New Playbook"}
+                </h3>
+                <p className="mt-1 text-[11px] text-[#697386]">
+                  {editingPlaybook
+                    ? "Update the definition fields and Playbook Rules."
+                    : "Define the setup before assigning completed Trades."}
+                </p>
+              </div>
+              {editingPlaybook ? (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  disabled={saving}
+                  className="flex h-8 items-center gap-1 rounded-md border border-[#E6E8EF] px-2.5 text-xs font-medium text-[#697386] transition hover:bg-[#F7F8FA] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <X size={13} aria-hidden="true" />
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+
+            {error ? (
+              <p
+                role="alert"
+                className="mt-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                {error}
+              </p>
+            ) : null}
+
+            <form
+              className="mt-4 grid gap-3 lg:grid-cols-[minmax(180px,0.8fr)_minmax(220px,1fr)_120px]"
+              onSubmit={onSubmit}
+            >
+              <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+                Name
+                <input
+                  value={form.name}
+                  onChange={(event) => onUpdateForm("name", event.target.value)}
+                  className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  maxLength={80}
+                  disabled={saving}
+                />
+              </label>
+
+              <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+                Description
+                <input
+                  value={form.description}
+                  onChange={(event) =>
+                    onUpdateForm("description", event.target.value)
+                  }
+                  className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  maxLength={500}
+                  disabled={saving}
+                />
+              </label>
+
+              <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
+                Color
+                <input
+                  value={form.color}
+                  onChange={(event) => onUpdateForm("color", event.target.value)}
+                  className="h-10 rounded-md border border-[#E6E8EF] bg-white px-3 text-sm font-semibold text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  maxLength={7}
+                  disabled={saving}
+                />
+              </label>
+
+              <label className="grid gap-1 text-sm font-medium text-[#4B5565] lg:col-span-3">
+                Playbook Rules
+                <textarea
+                  value={form.rules}
+                  onChange={(event) => onUpdateForm("rules", event.target.value)}
+                  className="min-h-28 resize-y rounded-md border border-[#E6E8EF] bg-white px-3 py-2 text-sm text-[#171923] outline-none transition placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+                  placeholder="One Playbook Rule per line"
+                  disabled={saving}
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-md bg-[#6C5DD3] px-4 text-sm font-semibold text-white transition hover:bg-[#5B4BC7] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#A0A7B8] lg:col-span-3"
+              >
+                {editingPlaybook ? (
+                  <Edit3 size={14} aria-hidden="true" />
+                ) : (
+                  <Plus size={14} aria-hidden="true" />
+                )}
+                {saving
+                  ? "Saving..."
+                  : editingPlaybook
+                    ? "Save Playbook"
+                    : "Create Playbook"}
+              </button>
+            </form>
+          </section>
+
+          {playbooks.length === 0 ? (
+            <EmptyState
+              title="No Playbooks yet"
+              body="Create a Playbook to define reusable setup rules."
+            />
+          ) : null}
+
           {playbooks.map((playbook) => {
             const isSelected = selected?.id === playbook.id;
             const winRatePct = playbook.winRate === null ? 0 : playbook.winRate * 100;
+            const deleting = deletingId === playbook.id;
+            const sourcePlaybook = storedPlaybooks.find(
+              (item) => item.id === playbook.id
+            );
 
             return (
-              <button
+              <article
                 key={playbook.id}
-                type="button"
-                onClick={() => setSelectedId(isSelected ? null : playbook.id)}
                 className="w-full rounded-xl p-4 text-left transition-all"
                 style={{
                   background: "#fff",
@@ -1719,19 +1889,55 @@ function PlaybooksView({
                 }}
               >
                 <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(isSelected ? null : playbook.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
                     <div className="text-[14px] font-semibold text-[#171923]">
                       {playbook.name}
                     </div>
                     <div className="mt-1 max-w-3xl text-[12px] leading-5 text-[#697386]">
                       {playbook.description}
                     </div>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (sourcePlaybook) {
+                          onEditPlaybook(sourcePlaybook);
+                        }
+                      }}
+                      disabled={saving || deleting || !sourcePlaybook}
+                      className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E6E8EF] text-[#697386] hover:bg-[#F7F8FA] disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Edit ${playbook.name}`}
+                    >
+                      <Edit3 size={14} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (sourcePlaybook) {
+                          onDeletePlaybook(sourcePlaybook);
+                        }
+                      }}
+                      disabled={saving || deleting || !sourcePlaybook}
+                      className="flex h-8 w-8 items-center justify-center rounded-md border border-red-100 text-[#E25555] hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Delete ${playbook.name}`}
+                    >
+                      {deleting ? (
+                        <RefreshCw size={14} aria-hidden="true" />
+                      ) : (
+                        <Trash2 size={14} aria-hidden="true" />
+                      )}
+                    </button>
+                    <BookMarked
+                      size={15}
+                      color={isSelected ? "#6C5DD3" : "#697386"}
+                      aria-hidden="true"
+                    />
                   </div>
-                  <BookMarked
-                    size={15}
-                    color={isSelected ? "#6C5DD3" : "#697386"}
-                    aria-hidden="true"
-                  />
                 </div>
 
                 <div className="mt-3 grid gap-3 sm:grid-cols-5">
@@ -1790,7 +1996,7 @@ function PlaybooksView({
                     }}
                   />
                 </div>
-              </button>
+              </article>
             );
           })}
 
@@ -2646,6 +2852,7 @@ function TradeFormView({
 
 export default function TradeJournal({
   initialTrades,
+  initialPlaybooks,
   userName,
   userEmail,
   nowIso,
@@ -2653,11 +2860,18 @@ export default function TradeJournal({
   const [trades, setTrades] = useState(() =>
     sortTrades(initialTrades.map(normalizeTrade))
   );
+  const [playbooks, setPlaybooks] = useState(() =>
+    sortPlaybooks(initialPlaybooks.map(normalizePlaybook))
+  );
   const [activeView, setActiveView] = useState<DashboardView>("dashboard");
   const [analyticsRange, setAnalyticsRange] =
     useState<AnalyticsRangeKey>("all");
   const [form, setForm] = useState<TradeFormState>(() => createEmptyForm(nowIso));
+  const [playbookForm, setPlaybookForm] = useState<PlaybookFormState>(() =>
+    createEmptyPlaybookForm()
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingPlaybookId, setEditingPlaybookId] = useState<string | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [tradeSearch, setTradeSearch] = useState("");
   const [statusFilter, setStatusFilter] =
@@ -2666,12 +2880,19 @@ export default function TradeJournal({
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [playbookSaving, setPlaybookSaving] = useState(false);
+  const [deletingPlaybookId, setDeletingPlaybookId] = useState<string | null>(null);
+  const [playbookError, setPlaybookError] = useState<string | null>(null);
   const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
   const displayName = userName || userEmail || "Authenticated trader";
 
   const editingTrade = useMemo(
     () => trades.find((trade) => trade.id === editingId) ?? null,
     [editingId, trades]
+  );
+  const editingPlaybook = useMemo(
+    () => playbooks.find((playbook) => playbook.id === editingPlaybookId) ?? null,
+    [editingPlaybookId, playbooks]
   );
   const selectedTrade = useMemo(
     () => trades.find((trade) => trade.id === selectedTradeId) ?? null,
@@ -2726,6 +2947,13 @@ export default function TradeJournal({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updatePlaybookForm<Key extends keyof PlaybookFormState>(
+    key: Key,
+    value: PlaybookFormState[Key]
+  ) {
+    setPlaybookForm((current) => ({ ...current, [key]: value }));
+  }
+
   function resetForm() {
     setEditingId(null);
     setForm(createEmptyForm(nowIso));
@@ -2742,6 +2970,114 @@ export default function TradeJournal({
     setForm(tradeToForm(trade));
     setError(null);
     setActiveView("journal");
+  }
+
+  function resetPlaybookForm() {
+    setEditingPlaybookId(null);
+    setPlaybookForm(createEmptyPlaybookForm());
+    setPlaybookError(null);
+  }
+
+  function openNewPlaybook() {
+    resetPlaybookForm();
+    setActiveView("playbooks");
+  }
+
+  function startEditPlaybook(playbook: PlaybookDto) {
+    setEditingPlaybookId(playbook.id);
+    setPlaybookForm(playbookToForm(playbook));
+    setPlaybookError(null);
+    setActiveView("playbooks");
+  }
+
+  async function handlePlaybookSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPlaybookError(null);
+
+    const result = buildPlaybookPayload(playbookForm);
+
+    if (result.error) {
+      setPlaybookError(result.error);
+      return;
+    }
+
+    setPlaybookSaving(true);
+
+    try {
+      const response = await fetch(
+        editingPlaybook ? `/api/playbooks/${editingPlaybook.id}` : "/api/playbooks",
+        {
+          method: editingPlaybook ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(result.payload),
+        }
+      );
+      const body = await readApiBody(response);
+
+      if (!response.ok || !body?.playbook) {
+        throw new Error(
+          formatApiError(body, "Unable to save this Playbook. Try again.")
+        );
+      }
+
+      const nextPlaybook = normalizePlaybook(body.playbook);
+      setPlaybooks((current) =>
+        sortPlaybooks(
+          editingPlaybook
+            ? current.map((playbook) =>
+                playbook.id === nextPlaybook.id ? nextPlaybook : playbook
+              )
+            : [...current, nextPlaybook]
+        )
+      );
+      resetPlaybookForm();
+    } catch (caught) {
+      setPlaybookError(
+        caught instanceof Error
+          ? caught.message
+          : "Unable to save this Playbook. Try again."
+      );
+    } finally {
+      setPlaybookSaving(false);
+    }
+  }
+
+  async function handleDeletePlaybook(playbook: PlaybookDto) {
+    if (!window.confirm(`Delete ${playbook.name} Playbook?`)) {
+      return;
+    }
+
+    setDeletingPlaybookId(playbook.id);
+    setPlaybookError(null);
+
+    try {
+      const response = await fetch(`/api/playbooks/${playbook.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const body = await readApiBody(response);
+        throw new Error(
+          formatApiError(body, "Unable to delete this Playbook. Try again.")
+        );
+      }
+
+      setPlaybooks((current) =>
+        current.filter((currentPlaybook) => currentPlaybook.id !== playbook.id)
+      );
+
+      if (editingPlaybookId === playbook.id) {
+        resetPlaybookForm();
+      }
+    } catch (caught) {
+      setPlaybookError(
+        caught instanceof Error
+          ? caught.message
+          : "Unable to delete this Playbook. Try again."
+      );
+    } finally {
+      setDeletingPlaybookId(null);
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2895,8 +3231,20 @@ export default function TradeJournal({
 
           {activeView === "playbooks" ? (
             <PlaybooksView
+              storedPlaybooks={playbooks}
               trades={trades}
               currentDate={currentDate}
+              form={playbookForm}
+              editingPlaybook={editingPlaybook}
+              saving={playbookSaving}
+              deletingId={deletingPlaybookId}
+              error={playbookError}
+              onUpdateForm={updatePlaybookForm}
+              onSubmit={handlePlaybookSubmit}
+              onNew={openNewPlaybook}
+              onEditPlaybook={startEditPlaybook}
+              onDeletePlaybook={handleDeletePlaybook}
+              onCancel={resetPlaybookForm}
               onEdit={startEdit}
             />
           ) : null}

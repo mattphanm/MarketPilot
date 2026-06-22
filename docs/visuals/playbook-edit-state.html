@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Playbook Edit State</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f7f8fa;
+        color: #171923;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        min-height: 820px;
+      }
+
+      .main {
+        min-width: 0;
+      }
+
+      .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #e6e8ef;
+        background: #ffffff;
+        padding: 12px 20px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .title {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .subtle {
+        margin-top: 4px;
+        color: #697386;
+        font-size: 11px;
+      }
+
+      .primary {
+        border: 0;
+        border-radius: 8px;
+        background: #6c5dd3;
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 700;
+        height: 32px;
+        padding: 0 12px;
+      }
+
+      .content {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .panel,
+      .playbook,
+      .aside {
+        border: 1px solid #e6e8ef;
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .secondary {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #e6e8ef;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #697386;
+        font-size: 12px;
+        font-weight: 600;
+        height: 32px;
+        padding: 0 10px;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) 120px;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      label {
+        display: grid;
+        gap: 4px;
+        color: #4b5565;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid #e6e8ef;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #171923;
+        font: inherit;
+        font-size: 14px;
+        outline: none;
+        padding: 9px 12px;
+      }
+
+      input {
+        height: 40px;
+      }
+
+      textarea {
+        min-height: 126px;
+        resize: none;
+      }
+
+      .wide {
+        grid-column: 1 / -1;
+      }
+
+      .submit {
+        align-items: center;
+        background: #6c5dd3;
+        border: 0;
+        border-radius: 6px;
+        color: #ffffff;
+        display: flex;
+        font-size: 14px;
+        font-weight: 700;
+        gap: 8px;
+        height: 40px;
+        justify-content: center;
+      }
+
+      .playbook {
+        border-color: #6c5dd3;
+        box-shadow: 0 0 0 1px rgba(108, 93, 211, 0.3);
+        padding: 16px;
+      }
+
+      .playbook-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .playbook h3 {
+        font-size: 14px;
+      }
+
+      .playbook p {
+        margin-top: 6px;
+        color: #697386;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .icons {
+        display: flex;
+        gap: 6px;
+      }
+
+      .icon {
+        align-items: center;
+        border: 1px solid #e6e8ef;
+        border-radius: 6px;
+        color: #697386;
+        display: flex;
+        height: 32px;
+        justify-content: center;
+        width: 32px;
+      }
+
+      .delete {
+        border-color: #fee2e2;
+        color: #e25555;
+      }
+
+      .metrics {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        margin-top: 12px;
+      }
+
+      .metric span {
+        color: #697386;
+        display: block;
+        font-size: 10px;
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 16px;
+        margin-top: 2px;
+      }
+
+      .track {
+        background: #e6e8ef;
+        border-radius: 999px;
+        height: 6px;
+        margin-top: 12px;
+      }
+
+      .fill {
+        background: #16a779;
+        border-radius: inherit;
+        height: 100%;
+        width: 72%;
+      }
+
+      .aside {
+        border-bottom: 0;
+        border-radius: 0;
+        border-right: 0;
+        border-top: 0;
+        padding: 20px;
+      }
+
+      .aside h2 {
+        font-size: 18px;
+      }
+
+      .aside p {
+        color: #697386;
+        font-size: 12px;
+        line-height: 1.6;
+        margin-top: 6px;
+      }
+
+      .stat-grid {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(2, 1fr);
+        margin-top: 18px;
+      }
+
+      .stat {
+        background: #f7f8fa;
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .stat span {
+        color: #697386;
+        display: block;
+        font-size: 10px;
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 13px;
+        margin-top: 4px;
+      }
+
+      .rules {
+        margin-top: 20px;
+      }
+
+      .section-label {
+        color: #697386;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .rule {
+        align-items: flex-start;
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .rule-badge {
+        align-items: center;
+        background: #6c5dd3;
+        border-radius: 999px;
+        color: #ffffff;
+        display: flex;
+        flex: 0 0 16px;
+        font-size: 9px;
+        font-weight: 800;
+        height: 16px;
+        justify-content: center;
+        margin-top: 2px;
+        width: 16px;
+      }
+
+      .rule-text {
+        font-size: 12px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="main">
+        <div class="bar">
+          <div>
+            <h1 class="title">Playbooks</h1>
+            <p class="subtle">Repeatable setups derived from logged trades</p>
+          </div>
+          <button class="primary">+ New Playbook</button>
+        </div>
+
+        <div class="content">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 class="title">Edit Playbook</h2>
+                <p class="subtle">Update the definition fields and Playbook Rules.</p>
+              </div>
+              <button class="secondary">x Cancel</button>
+            </div>
+
+            <form>
+              <label>
+                Name
+                <input value="Opening Range Breakout" />
+              </label>
+              <label>
+                Description
+                <input value="Momentum setup after the initial balance confirms direction." />
+              </label>
+              <label>
+                Color
+                <input value="#6C5DD3" />
+              </label>
+              <label class="wide">
+                Playbook Rules
+                <textarea>Market opens with clean directional imbalance
+Price breaks and holds the opening range
+Enter on pullback after confirmation candle
+Stop stays behind the failed range edge</textarea>
+              </label>
+              <button class="submit wide">✎ Save Playbook</button>
+            </form>
+          </section>
+
+          <article class="playbook">
+            <div class="playbook-top">
+              <div>
+                <h3>Opening Range Breakout</h3>
+                <p>Momentum setup after the initial balance confirms direction.</p>
+              </div>
+              <div class="icons">
+                <div class="icon">✎</div>
+                <div class="icon delete">⌫</div>
+                <div class="icon">▣</div>
+              </div>
+            </div>
+            <div class="metrics">
+              <div class="metric"><span>Win Rate</span><strong style="color:#16a779">72%</strong></div>
+              <div class="metric"><span>Avg Return</span><strong style="color:#16a779">+4.8%</strong></div>
+              <div class="metric"><span>Avg R</span><strong style="color:#16a779">1.6R</strong></div>
+              <div class="metric"><span>Trades</span><strong>18</strong></div>
+              <div class="metric"><span>Avg Hold</span><strong>0.4d</strong></div>
+            </div>
+            <div class="track"><div class="fill"></div></div>
+          </article>
+        </div>
+      </section>
+
+      <aside class="aside">
+        <h2>Opening Range Breakout</h2>
+        <p>Momentum setup after the initial balance confirms direction.</p>
+
+        <div class="stat-grid">
+          <div class="stat"><span>Best Trade</span><strong style="color:#16a779">NQ $1,240.00</strong></div>
+          <div class="stat"><span>Worst Trade</span><strong style="color:#e25555">ES -$320.00</strong></div>
+          <div class="stat"><span>Total Trades</span><strong>18</strong></div>
+          <div class="stat"><span>Avg Hold</span><strong>0.4 days</strong></div>
+        </div>
+
+        <div class="rules">
+          <div class="section-label">Entry Rules</div>
+          <div class="rule"><span class="rule-badge">1</span><span class="rule-text">Market opens with clean directional imbalance</span></div>
+          <div class="rule"><span class="rule-badge">2</span><span class="rule-text">Price breaks and holds the opening range</span></div>
+          <div class="rule"><span class="rule-badge">3</span><span class="rule-text">Enter on pullback after confirmation candle</span></div>
+          <div class="rule"><span class="rule-badge">4</span><span class="rule-text">Stop stays behind the failed range edge</span></div>
+        </div>
+      </aside>
+    </main>
+  </body>
+</html>
