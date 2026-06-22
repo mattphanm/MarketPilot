@@ -2771,6 +2771,221 @@ function TradeLogView({
   );
 }
 
+function JournalReviewView({
+  trades,
+  playbooks,
+  onEdit,
+  onAddTrade,
+}: {
+  trades: TradeDto[];
+  playbooks: PlaybookDto[];
+  onEdit: (trade: TradeDto) => void;
+  onAddTrade: () => void;
+}) {
+  const journalTrades = useMemo(
+    () =>
+      [...trades].sort(
+        (a, b) =>
+          new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()
+      ),
+    [trades]
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => journalTrades[0]?.id ?? null
+  );
+  const selectedTrade =
+    journalTrades.find((trade) => trade.id === selectedId) ??
+    journalTrades[0] ??
+    null;
+  const selectedPlaybook =
+    playbooks.find((playbook) => playbook.id === selectedTrade?.playbookId) ??
+    null;
+
+  if (journalTrades.length === 0) {
+    return (
+      <div className="p-4 lg:p-5">
+        <EmptyState
+          title="No journal entries yet"
+          body="Add a completed trade to build your review history."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid min-h-0 gap-4 p-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:p-5">
+      <section className="min-h-0 overflow-hidden rounded-lg border border-[#E6E8EF] bg-white">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E6E8EF] px-4 py-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[#171923]">
+              Journal Entries
+            </h2>
+            <p className="mt-1 text-[11px] text-[#697386]">
+              {numberFormatter.format(journalTrades.length)} completed trades
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onAddTrade}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#6C5DD3] px-3 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7]"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Add
+          </button>
+        </div>
+
+        <div className="max-h-[calc(100vh-190px)] overflow-y-auto p-2">
+          {journalTrades.map((trade) => {
+            const selected = selectedTrade?.id === trade.id;
+            const playbook = playbooks.find(
+              (current) => current.id === trade.playbookId
+            );
+
+            return (
+              <button
+                key={trade.id}
+                type="button"
+                onClick={() => setSelectedId(trade.id)}
+                className={`w-full rounded-lg border p-3 text-left transition ${
+                  selected
+                    ? "border-[#6C5DD3] bg-[#6C5DD3]/5 shadow-[inset_3px_0_0_#6C5DD3]"
+                    : "border-transparent hover:border-[#E6E8EF] hover:bg-[#F7F8FA]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-[13px] font-semibold text-[#171923]">
+                        {trade.symbol}
+                      </p>
+                      <DirectionPill side={trade.side} />
+                    </div>
+                    <p className="mt-1 text-[11px] text-[#697386]">
+                      {formatShortDate(trade.openedAt)}
+                    </p>
+                  </div>
+                  <StatusPill trade={trade} />
+                </div>
+
+                <p className="mt-3 line-clamp-2 text-[12px] leading-5 text-[#4B5565]">
+                  {trade.journalEntry?.tradeIdea || "No trade idea captured."}
+                </p>
+
+                <div className="mt-3 flex items-center justify-between gap-3 text-[11px]">
+                  <span className="truncate text-[#697386]">
+                    {playbook?.name ?? "Unassigned Playbook"}
+                  </span>
+                  <span
+                    className={`font-semibold ${getMetricValueClass(
+                      getMoneyTone(getTradePnl(trade))
+                    )}`}
+                  >
+                    {formatWholeDollar(getTradePnl(trade))}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="min-w-0 rounded-lg border border-[#E6E8EF] bg-white">
+        {selectedTrade ? (
+          <div>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E6E8EF] px-4 py-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-[18px] font-semibold text-[#171923]">
+                    {selectedTrade.symbol} Review
+                  </h2>
+                  <StatusPill trade={selectedTrade} />
+                </div>
+                <p className="mt-1 text-[12px] text-[#697386]">
+                  {formatDate(selectedTrade.openedAt)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onEdit(selectedTrade)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-semibold text-[#4B5565] transition hover:bg-[#F7F8FA]"
+              >
+                <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
+                Edit
+              </button>
+            </div>
+
+            <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+              <div className="grid gap-4">
+                <section>
+                  <h3 className="text-[12px] font-semibold text-[#171923]">
+                    Trade Idea
+                  </h3>
+                  <div className="mt-2 min-h-28 whitespace-pre-wrap rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[13px] leading-6 text-[#171923]">
+                    {selectedTrade.journalEntry?.tradeIdea ||
+                      "No trade idea captured."}
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="text-[12px] font-semibold text-[#171923]">
+                    Confluences
+                  </h3>
+                  <div className="mt-2 min-h-28 whitespace-pre-wrap rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[13px] leading-6 text-[#171923]">
+                    {selectedTrade.journalEntry?.confluences ||
+                      "No confluences captured."}
+                  </div>
+                </section>
+              </div>
+
+              <aside className="grid content-start gap-3">
+                <div className="rounded-lg border border-[#E6E8EF] bg-[#FBFCFD] p-3">
+                  <p className="text-[11px] font-medium text-[#697386]">
+                    Playbook
+                  </p>
+                  <p className="mt-1 text-[14px] font-semibold text-[#171923]">
+                    {selectedPlaybook?.name ?? "Unassigned"}
+                  </p>
+                  {selectedPlaybook?.description ? (
+                    <p className="mt-2 text-[12px] leading-5 text-[#697386]">
+                      {selectedPlaybook.description}
+                    </p>
+                  ) : null}
+                </div>
+
+                {[
+                  ["Direction", getDirectionLabel(selectedTrade.side)],
+                  ["Risk", formatMoney(selectedTrade.riskDollars)],
+                  ["R Multiple", `${formatRatio(selectedTrade.rMultiple)}R`],
+                  ["Realized P&L", formatWholeDollar(getTradePnl(selectedTrade))],
+                  ["Outcome", getTradeStatusLabel(selectedTrade)],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-[#E6E8EF] bg-white px-3 py-2.5 text-[12px]"
+                  >
+                    <span className="text-[#697386]">{label}</span>
+                    <span
+                      className={`text-right font-semibold ${
+                        label === "Realized P&L"
+                          ? getMetricValueClass(
+                              getMoneyTone(getTradePnl(selectedTrade))
+                            )
+                          : "text-[#171923]"
+                      }`}
+                    >
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </aside>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 function TradeFormView({
   form,
   editingTrade,
@@ -3174,6 +3389,7 @@ export default function TradeJournal({
   const [inlinePlaybookForm, setInlinePlaybookForm] =
     useState<PlaybookFormState>(() => createEmptyPlaybookForm());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [tradeFormOpen, setTradeFormOpen] = useState(false);
   const [editingPlaybookId, setEditingPlaybookId] = useState<string | null>(null);
   const [showPlaybookModal, setShowPlaybookModal] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
@@ -3264,17 +3480,20 @@ export default function TradeJournal({
 
   function resetForm() {
     setEditingId(null);
+    setTradeFormOpen(false);
     setForm(createEmptyForm(nowIso));
     setError(null);
   }
 
   function openNewTrade() {
     resetForm();
+    setTradeFormOpen(true);
     setActiveView("journal");
   }
 
   function startEdit(trade: TradeDto) {
     setEditingId(trade.id);
+    setTradeFormOpen(true);
     setForm(tradeToForm(trade));
     setError(null);
     setActiveView("journal");
@@ -3639,7 +3858,16 @@ export default function TradeJournal({
             />
           ) : null}
 
-          {activeView === "journal" ? (
+          {activeView === "journal" && !tradeFormOpen ? (
+            <JournalReviewView
+              trades={trades}
+              playbooks={playbooks}
+              onEdit={startEdit}
+              onAddTrade={openNewTrade}
+            />
+          ) : null}
+
+          {activeView === "journal" && tradeFormOpen ? (
             <TradeFormView
               form={form}
               editingTrade={editingTrade}
