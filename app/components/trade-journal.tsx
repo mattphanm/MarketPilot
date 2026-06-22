@@ -2,7 +2,9 @@
 
 import { useMemo, useRef, useEffect, useState, type FormEvent } from "react";
 import {
-  Award,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   BarChart2,
   Bell,
   BookMarked,
@@ -16,7 +18,6 @@ import {
   RefreshCw,
   Search,
   Settings,
-  Target,
   TrendingUp,
   Trash2,
   X,
@@ -35,6 +36,14 @@ import {
   type EquityPoint,
 } from "@/lib/analytics/report";
 import type { PlaybookDto, PlaybookPayload } from "@/lib/playbooks/types";
+import {
+  filterAndSortTradeLogRows,
+  getTradeStatusLabel,
+  type TradeResultFilter,
+  type TradeSideFilter,
+  type TradeSort,
+  type TradeSortKey,
+} from "@/lib/trades/log-view";
 import type { TradeDto, TradePayload, TradeSide } from "@/lib/trades/types";
 
 type TradeJournalProps = {
@@ -381,20 +390,6 @@ function getStatusBadgeClass(trade: TradeDto) {
   return "bg-amber-50 text-[#D99A20]";
 }
 
-function getTradeStatusLabel(trade: TradeDto) {
-  const pnl = getTradePnl(trade);
-
-  if (pnl > 0) {
-    return "WIN";
-  }
-
-  if (pnl < 0) {
-    return "LOSS";
-  }
-
-  return "BE";
-}
-
 function getDirectionLabel(side: TradeSide) {
   return side === "long" ? "Long" : "Short";
 }
@@ -505,64 +500,6 @@ function buildSymbolAllocation(trades: TradeDto[]) {
       percent: total > 0 ? value / total : 0,
       color: allocationColors[index % allocationColors.length],
     }));
-}
-
-function buildMonthlyReturns(trades: TradeDto[]) {
-  const monthly = new Map<string, { label: string; pnl: number; risk: number }>();
-
-  for (const trade of trades) {
-    const pnl = getTradePnl(trade);
-    const date = new Date(trade.openedAt);
-    const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth()).padStart(2, "0")}`;
-    const label = new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      timeZone: "UTC",
-    }).format(date);
-    const current = monthly.get(key) ?? { label, pnl: 0, risk: 0 };
-    current.pnl += pnl;
-    current.risk += getTradeRisk(trade);
-    monthly.set(key, current);
-  }
-
-  return [...monthly.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-6)
-    .map(([, month]) => ({
-      month: month.label,
-      returnPct: month.risk > 0 ? month.pnl / month.risk : 0,
-      pnl: month.pnl,
-    }));
-}
-
-function buildReturnDistribution(trades: TradeDto[]) {
-  const buckets = [
-    { range: "< -2R", count: 0 },
-    { range: "-2R to -1R", count: 0 },
-    { range: "-1R to 0R", count: 0 },
-    { range: "0R to 1R", count: 0 },
-    { range: "1R to 2R", count: 0 },
-    { range: "> 2R", count: 0 },
-  ];
-
-  for (const trade of trades) {
-    const value = getTradeRMultiple(trade);
-
-    if (value < -2) {
-      buckets[0].count += 1;
-    } else if (value < -1) {
-      buckets[1].count += 1;
-    } else if (value < 0) {
-      buckets[2].count += 1;
-    } else if (value < 1) {
-      buckets[3].count += 1;
-    } else if (value < 2) {
-      buckets[4].count += 1;
-    } else {
-      buckets[5].count += 1;
-    }
-  }
-
-  return buckets;
 }
 
 function buildPlaybooks(
@@ -783,6 +720,50 @@ function DirectionPill({ side }: { side: TradeSide }) {
   );
 }
 
+function SortableTradeHeader({
+  label,
+  align = "left",
+  sortKey,
+  activeSort,
+  onSortChange,
+}: {
+  label: string;
+  align?: "left" | "right";
+  sortKey: TradeSortKey;
+  activeSort: TradeSort;
+  onSortChange: (key: TradeSortKey) => void;
+}) {
+  const active = activeSort.key === sortKey;
+  const Icon = active
+    ? activeSort.direction === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSortChange(sortKey)}
+      aria-pressed={active}
+      aria-label={`Sort by ${label}${
+        active
+          ? ` ${activeSort.direction === "asc" ? "ascending" : "descending"}`
+          : ""
+      }`}
+      className={`flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] font-semibold transition ${
+        align === "right" ? "justify-end" : "justify-start"
+      } ${
+        active
+          ? "bg-[#6C5DD3]/10 text-[#6C5DD3]"
+          : "text-[#697386] hover:bg-white hover:text-[#171923]"
+      }`}
+    >
+      <span>{label}</span>
+      <Icon size={11} aria-hidden="true" />
+    </button>
+  );
+}
+
 function EmptyState({
   title,
   body,
@@ -821,50 +802,6 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <h2 className="mb-3 text-[13px] font-semibold text-[#171923]">
       {children}
     </h2>
-  );
-}
-
-function MiniBarChart({
-  data,
-  valueKey,
-  labelKey,
-  positiveColor = "#16A779",
-  negativeColor = "#E25555",
-}: {
-  data: Array<Record<string, string | number>>;
-  valueKey: string;
-  labelKey: string;
-  positiveColor?: string;
-  negativeColor?: string;
-}) {
-  const maxAbs = Math.max(
-    1,
-    ...data.map((item) => Math.abs(Number(item[valueKey]) || 0))
-  );
-
-  return (
-    <div className="flex h-36 items-end gap-2 border-b border-[#E6E8EF] pb-2">
-      {data.map((item) => {
-        const value = Number(item[valueKey]) || 0;
-        const height = Math.max(8, (Math.abs(value) / maxAbs) * 100);
-
-        return (
-          <div
-            key={String(item[labelKey])}
-            className="flex min-w-8 flex-1 flex-col items-center justify-end gap-1"
-            title={`${item[labelKey]}: ${value}`}
-          >
-            <div
-              className="w-full rounded-t-sm"
-              style={{
-                height: `${height}%`,
-                background: value >= 0 ? positiveColor : negativeColor,
-              }}
-            />
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -1676,22 +1613,30 @@ function PlaybooksView({
     () => buildPlaybooks(storedPlaybooks, trades, currentDate),
     [currentDate, storedPlaybooks, trades]
   );
-  const monthlyReturns = useMemo(() => buildMonthlyReturns(trades), [trades]);
-  const returnDistribution = useMemo(
-    () => buildReturnDistribution(trades),
-    [trades]
-  );
   const [selectedId, setSelectedId] = useState<string | null>(
     () => storedPlaybooks[0]?.id ?? null
   );
 
   const prevCountRef = useRef(storedPlaybooks.length);
   useEffect(() => {
+    let cancelled = false;
+
     if (storedPlaybooks.length > prevCountRef.current) {
       const newest = storedPlaybooks[storedPlaybooks.length - 1];
-      if (newest) setSelectedId(newest.id);
+      if (newest) {
+        queueMicrotask(() => {
+          if (!cancelled) {
+            setSelectedId(newest.id);
+          }
+        });
+      }
     }
+
     prevCountRef.current = storedPlaybooks.length;
+
+    return () => {
+      cancelled = true;
+    };
   }, [storedPlaybooks]);
 
   const selected =
@@ -2030,30 +1975,26 @@ function PlaybooksView({
                 const winRatePct = selected.winRate === null ? 0 : selected.winRate * 100;
                 return [
                   {
-                    icon: TrendingUp,
                     label: "Win Rate",
                     value: selected.winRate === null ? "-" : formatPercent(selected.winRate),
                     color: winRatePct >= 65 ? "#16A779" : "#D99A20",
                   },
                   {
-                    icon: Target,
                     label: "Avg Return",
                     value: `${selected.avgReturn >= 0 ? "+" : ""}${ratioFormatter.format(selected.avgReturn)}%`,
                     color: selected.avgReturn >= 0 ? "#16A779" : "#E25555",
                   },
                   {
-                    icon: Award,
                     label: "Avg R Multiple",
                     value: `${ratioFormatter.format(selected.avgRMultiple)}R`,
                     color: selected.avgRMultiple >= 1.5 ? "#16A779" : "#D99A20",
                   },
                   {
-                    icon: TrendingUp,
                     label: "Total Trades",
                     value: numberFormatter.format(selected.totalTrades),
                     color: "#171923",
                   },
-                ].map(({ icon: Icon, label, value, color }) => (
+                ].map(({ label, value, color }) => (
                   <div key={label} className="rounded-xl bg-[#F7F8FA] p-3">
                     <p className="mb-0.5 text-[10px] text-[#697386]">{label}</p>
                     <p className="text-[18px] font-bold" style={{ color }}>{value}</p>
@@ -2250,12 +2191,14 @@ function TradeLogView({
   search,
   resultFilter,
   sideFilter,
+  activeSort,
   selectedTrade,
   deletingId,
   saving,
   onSearchChange,
   onResultFilterChange,
   onSideFilterChange,
+  onSortChange,
   onSelectTrade,
   onEdit,
   onDelete,
@@ -2263,14 +2206,16 @@ function TradeLogView({
 }: {
   trades: TradeDto[];
   search: string;
-  resultFilter: "all" | "win" | "loss";
-  sideFilter: "all" | TradeSide;
+  resultFilter: TradeResultFilter;
+  sideFilter: TradeSideFilter;
+  activeSort: TradeSort;
   selectedTrade: TradeDto | null;
   deletingId: string | null;
   saving: boolean;
   onSearchChange: (value: string) => void;
-  onResultFilterChange: (value: "all" | "win" | "loss") => void;
-  onSideFilterChange: (value: "all" | TradeSide) => void;
+  onResultFilterChange: (value: TradeResultFilter) => void;
+  onSideFilterChange: (value: TradeSideFilter) => void;
+  onSortChange: (key: TradeSortKey) => void;
   onSelectTrade: (trade: TradeDto | null) => void;
   onEdit: (trade: TradeDto) => void;
   onDelete: (trade: TradeDto) => void;
@@ -2282,16 +2227,40 @@ function TradeLogView({
     .reduce((sum, pnl) => sum + pnl, 0);
   const wins = trades.filter((trade) => getTradePnl(trade) > 0).length;
   const winRate = trades.length > 0 ? wins / trades.length : null;
+  const hasActiveSearch = search.trim().length > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-[#E6E8EF] bg-white px-4 py-3 lg:px-5">
-        <input
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search symbol, trade idea, or confluences"
-          className="h-8 w-full rounded-md border border-[#E6E8EF] bg-[#F7F8FA] px-3 text-[12px] text-[#171923] outline-none placeholder:text-[#A0A7B8] focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 sm:w-56"
-        />
+        <div
+          className={`flex h-8 w-full items-center gap-2 rounded-md border px-2.5 sm:w-72 ${
+            hasActiveSearch
+              ? "border-[#6C5DD3] bg-[#6C5DD3]/10"
+              : "border-[#E6E8EF] bg-[#F7F8FA]"
+          }`}
+        >
+          <Search
+            size={13}
+            aria-hidden="true"
+            className={hasActiveSearch ? "text-[#6C5DD3]" : "text-[#A0A7B8]"}
+          />
+          <input
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search symbol or journal context"
+            className="min-w-0 flex-1 bg-transparent text-[12px] text-[#171923] outline-none placeholder:text-[#A0A7B8]"
+          />
+          {hasActiveSearch ? (
+            <button
+              type="button"
+              onClick={() => onSearchChange("")}
+              aria-label="Clear trade search"
+              className="text-[#6C5DD3] transition hover:text-[#171923]"
+            >
+              <X size={13} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
 
         <div className="flex gap-1">
           {(["all", "win", "loss"] as const).map((option) => (
@@ -2301,7 +2270,7 @@ function TradeLogView({
               onClick={() => onResultFilterChange(option)}
               className={`h-8 rounded-md border px-2.5 text-[11px] font-medium capitalize ${
                 resultFilter === option
-                  ? "border-[#6C5DD3] bg-[#6C5DD3]/10 text-[#6C5DD3]"
+                  ? "border-[#6C5DD3] bg-[#6C5DD3]/10 text-[#6C5DD3] shadow-[inset_0_0_0_1px_rgba(108,93,211,0.12)]"
                   : "border-[#E6E8EF] bg-white text-[#697386]"
               }`}
             >
@@ -2318,7 +2287,7 @@ function TradeLogView({
               onClick={() => onSideFilterChange(option)}
               className={`h-8 rounded-md border px-2.5 text-[11px] font-medium capitalize ${
                 sideFilter === option
-                  ? "border-[#6C5DD3] bg-[#6C5DD3]/10 text-[#6C5DD3]"
+                  ? "border-[#6C5DD3] bg-[#6C5DD3]/10 text-[#6C5DD3] shadow-[inset_0_0_0_1px_rgba(108,93,211,0.12)]"
                   : "border-[#E6E8EF] bg-white text-[#697386]"
               }`}
             >
@@ -2376,24 +2345,74 @@ function TradeLogView({
             <table className="w-full min-w-[980px] border-collapse bg-white">
               <thead className="sticky top-0 z-10 bg-[#F7F8FA]">
                 <tr className="border-b border-[#E6E8EF] text-left">
-                  {[
-                    "Date",
-                    "Symbol",
-                    "Side",
-                    "Risk",
-                    "R",
-                    "P&L",
-                    "Result",
-                    "Trade Idea",
-                    "",
-                  ].map((heading) => (
-                    <th
-                      key={heading}
-                      className="px-3 py-2 text-[10px] font-medium text-[#697386]"
-                    >
-                      {heading}
-                    </th>
-                  ))}
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="Date"
+                      sortKey="openedAt"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="Symbol"
+                      sortKey="symbol"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="Side"
+                      sortKey="side"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="Risk"
+                      align="right"
+                      sortKey="riskDollars"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="R"
+                      align="right"
+                      sortKey="rMultiple"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="P&L"
+                      align="right"
+                      sortKey="pnl"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="Result"
+                      sortKey="result"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2">
+                    <SortableTradeHeader
+                      label="Trade Idea"
+                      sortKey="tradeIdea"
+                      activeSort={activeSort}
+                      onSortChange={onSortChange}
+                    />
+                  </th>
+                  <th className="px-3 py-2 text-[10px] font-medium text-[#697386]" />
                 </tr>
               </thead>
               <tbody>
@@ -2985,9 +3004,12 @@ export default function TradeJournal({
   const [showPlaybookModal, setShowPlaybookModal] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [tradeSearch, setTradeSearch] = useState("");
-  const [resultFilter, setResultFilter] =
-    useState<"all" | "win" | "loss">("all");
-  const [sideFilter, setSideFilter] = useState<"all" | TradeSide>("all");
+  const [resultFilter, setResultFilter] = useState<TradeResultFilter>("all");
+  const [sideFilter, setSideFilter] = useState<TradeSideFilter>("all");
+  const [tradeSort, setTradeSort] = useState<TradeSort>({
+    key: "openedAt",
+    direction: "desc",
+  });
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3028,33 +3050,21 @@ export default function TradeJournal({
   );
   const radarPoints = useMemo(() => getRadarPoints(score.metrics), [score.metrics]);
   const filteredTrades = useMemo(() => {
-    const query = tradeSearch.trim().toLowerCase();
-
-    return trades.filter((trade) => {
-      if (
-        query &&
-        !trade.symbol.toLowerCase().includes(query) &&
-        !(trade.journalEntry?.tradeIdea ?? "").toLowerCase().includes(query) &&
-        !(trade.journalEntry?.confluences ?? "").toLowerCase().includes(query)
-      ) {
-        return false;
-      }
-
-      if (resultFilter === "win" && getTradePnl(trade) <= 0) {
-        return false;
-      }
-
-      if (resultFilter === "loss" && getTradePnl(trade) >= 0) {
-        return false;
-      }
-
-      if (sideFilter !== "all" && trade.side !== sideFilter) {
-        return false;
-      }
-
-      return true;
+    return filterAndSortTradeLogRows(trades, {
+      search: tradeSearch,
+      resultFilter,
+      sideFilter,
+      sort: tradeSort,
     });
-  }, [resultFilter, sideFilter, tradeSearch, trades]);
+  }, [resultFilter, sideFilter, tradeSearch, tradeSort, trades]);
+
+  function updateTradeSort(key: TradeSortKey) {
+    setTradeSort((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "desc" ? "asc" : "desc",
+    }));
+  }
 
   function updateForm<Key extends keyof TradeFormState>(
     key: Key,
@@ -3399,12 +3409,14 @@ export default function TradeJournal({
               search={tradeSearch}
               resultFilter={resultFilter}
               sideFilter={sideFilter}
+              activeSort={tradeSort}
               selectedTrade={selectedTrade}
               deletingId={deletingId}
               saving={saving}
               onSearchChange={setTradeSearch}
               onResultFilterChange={setResultFilter}
               onSideFilterChange={setSideFilter}
+              onSortChange={updateTradeSort}
               onSelectTrade={(trade) => setSelectedTradeId(trade?.id ?? null)}
               onEdit={startEdit}
               onDelete={handleDelete}
