@@ -73,6 +73,11 @@ type TradeFormState = {
   confluences: string;
 };
 
+type JournalFormState = {
+  tradeIdea: string;
+  confluences: string;
+};
+
 type PlaybookFormState = {
   name: string;
   description: string;
@@ -214,6 +219,13 @@ function tradeToForm(trade: TradeDto): TradeFormState {
     openedAt: formatTradeDateInput(trade.openedAt),
     riskDollars: String(trade.riskDollars),
     rMultiple: String(trade.rMultiple),
+    tradeIdea: trade.journalEntry?.tradeIdea ?? "",
+    confluences: trade.journalEntry?.confluences ?? "",
+  };
+}
+
+function tradeToJournalForm(trade: TradeDto): JournalFormState {
+  return {
     tradeIdea: trade.journalEntry?.tradeIdea ?? "",
     confluences: trade.journalEntry?.confluences ?? "",
   };
@@ -629,6 +641,25 @@ function buildPayload(
   };
 
   return { payload, error: null };
+}
+
+function buildJournalPayload(
+  form: JournalFormState
+):
+  | { payload: Pick<TradePayload, "tradeIdea" | "confluences">; error: null }
+  | { payload: null; error: string } {
+  const tradeIdea = form.tradeIdea.trim();
+  const confluences = form.confluences.trim();
+
+  if (!tradeIdea) {
+    return { payload: null, error: "Trade idea is required." };
+  }
+
+  if (!confluences) {
+    return { payload: null, error: "Confluences are required." };
+  }
+
+  return { payload: { tradeIdea, confluences }, error: null };
 }
 
 function buildPlaybookPayload(
@@ -2774,12 +2805,29 @@ function TradeLogView({
 function JournalReviewView({
   trades,
   playbooks,
-  onEdit,
+  editingId,
+  form,
+  saving,
+  error,
+  onStartEdit,
+  onCancelEdit,
+  onSubmitEdit,
+  onUpdateForm,
   onAddTrade,
 }: {
   trades: TradeDto[];
   playbooks: PlaybookDto[];
-  onEdit: (trade: TradeDto) => void;
+  editingId: string | null;
+  form: JournalFormState;
+  saving: boolean;
+  error: string | null;
+  onStartEdit: (trade: TradeDto) => void;
+  onCancelEdit: () => void;
+  onSubmitEdit: (trade: TradeDto) => void;
+  onUpdateForm: <Key extends keyof JournalFormState>(
+    key: Key,
+    value: JournalFormState[Key]
+  ) => void;
   onAddTrade: () => void;
 }) {
   const journalTrades = useMemo(
@@ -2800,6 +2848,7 @@ function JournalReviewView({
   const selectedPlaybook =
     playbooks.find((playbook) => playbook.id === selectedTrade?.playbookId) ??
     null;
+  const editingSelectedTrade = selectedTrade?.id === editingId;
 
   if (journalTrades.length === 0) {
     return (
@@ -2845,7 +2894,12 @@ function JournalReviewView({
               <button
                 key={trade.id}
                 type="button"
-                onClick={() => setSelectedId(trade.id)}
+                onClick={() => {
+                  if (trade.id !== selectedTrade?.id) {
+                    onCancelEdit();
+                  }
+                  setSelectedId(trade.id);
+                }}
                 className={`w-full rounded-lg border p-3 text-left transition ${
                   selected
                     ? "border-[#6C5DD3] bg-[#6C5DD3]/5 shadow-[inset_3px_0_0_#6C5DD3]"
@@ -2906,7 +2960,7 @@ function JournalReviewView({
               </div>
               <button
                 type="button"
-                onClick={() => onEdit(selectedTrade)}
+                onClick={() => onStartEdit(selectedTrade)}
                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-semibold text-[#4B5565] transition hover:bg-[#F7F8FA]"
               >
                 <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -2915,27 +2969,97 @@ function JournalReviewView({
             </div>
 
             <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-              <div className="grid gap-4">
-                <section>
-                  <h3 className="text-[12px] font-semibold text-[#171923]">
-                    Trade Idea
-                  </h3>
-                  <div className="mt-2 min-h-28 whitespace-pre-wrap rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[13px] leading-6 text-[#171923]">
-                    {selectedTrade.journalEntry?.tradeIdea ||
-                      "No trade idea captured."}
-                  </div>
-                </section>
+              {editingSelectedTrade ? (
+                <form
+                  className="grid gap-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    onSubmitEdit(selectedTrade);
+                  }}
+                >
+                  <section>
+                    <label
+                      htmlFor="journal-trade-idea"
+                      className="text-[12px] font-semibold text-[#171923]"
+                    >
+                      Trade Idea
+                    </label>
+                    <textarea
+                      id="journal-trade-idea"
+                      value={form.tradeIdea}
+                      onChange={(event) =>
+                        onUpdateForm("tradeIdea", event.target.value)
+                      }
+                      rows={6}
+                      className="mt-2 min-h-28 w-full resize-y rounded-lg border border-[#D7DAE2] bg-white p-3 text-[13px] leading-6 text-[#171923] outline-none transition focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/20"
+                    />
+                  </section>
 
-                <section>
-                  <h3 className="text-[12px] font-semibold text-[#171923]">
-                    Confluences
-                  </h3>
-                  <div className="mt-2 min-h-28 whitespace-pre-wrap rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[13px] leading-6 text-[#171923]">
-                    {selectedTrade.journalEntry?.confluences ||
-                      "No confluences captured."}
+                  <section>
+                    <label
+                      htmlFor="journal-confluences"
+                      className="text-[12px] font-semibold text-[#171923]"
+                    >
+                      Confluences
+                    </label>
+                    <textarea
+                      id="journal-confluences"
+                      value={form.confluences}
+                      onChange={(event) =>
+                        onUpdateForm("confluences", event.target.value)
+                      }
+                      rows={6}
+                      className="mt-2 min-h-28 w-full resize-y rounded-lg border border-[#D7DAE2] bg-white p-3 text-[13px] leading-6 text-[#171923] outline-none transition focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/20"
+                    />
+                  </section>
+
+                  {error ? (
+                    <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[12px] text-[#B42318]">
+                      {error}
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={onCancelEdit}
+                      disabled={saving}
+                      className="inline-flex h-9 items-center rounded-md border border-[#E6E8EF] bg-white px-4 text-[12px] font-semibold text-[#4B5565] transition hover:bg-[#F7F8FA] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="inline-flex h-9 items-center rounded-md bg-[#6C5DD3] px-4 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {saving ? "Saving..." : "Save Journal"}
+                    </button>
                   </div>
-                </section>
-              </div>
+                </form>
+              ) : (
+                <div className="grid gap-4">
+                  <section>
+                    <h3 className="text-[12px] font-semibold text-[#171923]">
+                      Trade Idea
+                    </h3>
+                    <div className="mt-2 min-h-28 whitespace-pre-wrap rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[13px] leading-6 text-[#171923]">
+                      {selectedTrade.journalEntry?.tradeIdea ||
+                        "No trade idea captured."}
+                    </div>
+                  </section>
+
+                  <section>
+                    <h3 className="text-[12px] font-semibold text-[#171923]">
+                      Confluences
+                    </h3>
+                    <div className="mt-2 min-h-28 whitespace-pre-wrap rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-3 text-[13px] leading-6 text-[#171923]">
+                      {selectedTrade.journalEntry?.confluences ||
+                        "No confluences captured."}
+                    </div>
+                  </section>
+                </div>
+              )}
 
               <aside className="grid content-start gap-3">
                 <div className="rounded-lg border border-[#E6E8EF] bg-[#FBFCFD] p-3">
@@ -3390,6 +3514,11 @@ export default function TradeJournal({
     useState<PlaybookFormState>(() => createEmptyPlaybookForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+  const [journalForm, setJournalForm] = useState<JournalFormState>({
+    tradeIdea: "",
+    confluences: "",
+  });
   const [editingPlaybookId, setEditingPlaybookId] = useState<string | null>(null);
   const [showPlaybookModal, setShowPlaybookModal] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
@@ -3401,9 +3530,11 @@ export default function TradeJournal({
     direction: "desc",
   });
   const [saving, setSaving] = useState(false);
+  const [journalSaving, setJournalSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<TradeDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [journalError, setJournalError] = useState<string | null>(null);
   const [playbookSaving, setPlaybookSaving] = useState(false);
   const [inlinePlaybookSaving, setInlinePlaybookSaving] = useState(false);
   const [deletingPlaybookId, setDeletingPlaybookId] = useState<string | null>(null);
@@ -3464,6 +3595,13 @@ export default function TradeJournal({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updateJournalForm<Key extends keyof JournalFormState>(
+    key: Key,
+    value: JournalFormState[Key]
+  ) {
+    setJournalForm((current) => ({ ...current, [key]: value }));
+  }
+
   function updatePlaybookForm<Key extends keyof PlaybookFormState>(
     key: Key,
     value: PlaybookFormState[Key]
@@ -3497,6 +3635,18 @@ export default function TradeJournal({
     setForm(tradeToForm(trade));
     setError(null);
     setActiveView("journal");
+  }
+
+  function startJournalEdit(trade: TradeDto) {
+    setEditingJournalId(trade.id);
+    setJournalForm(tradeToJournalForm(trade));
+    setJournalError(null);
+  }
+
+  function resetJournalEdit() {
+    setEditingJournalId(null);
+    setJournalForm({ tradeIdea: "", confluences: "" });
+    setJournalError(null);
   }
 
   function resetPlaybookForm() {
@@ -3722,6 +3872,53 @@ export default function TradeJournal({
     }
   }
 
+  async function handleJournalSubmit(trade: TradeDto) {
+    setJournalError(null);
+
+    const result = buildJournalPayload(journalForm);
+
+    if (result.error) {
+      setJournalError(result.error);
+      return;
+    }
+
+    setJournalSaving(true);
+
+    try {
+      const response = await fetch(`/api/trades/${trade.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result.payload),
+      });
+      const body = await readApiBody(response);
+
+      if (!response.ok || !body?.trade) {
+        throw new Error(
+          formatApiError(body, "Unable to save this journal entry. Try again.")
+        );
+      }
+
+      const nextTrade = normalizeTrade(body.trade);
+      setTrades((current) =>
+        sortTrades(
+          current.map((currentTrade) =>
+            currentTrade.id === nextTrade.id ? nextTrade : currentTrade
+          )
+        )
+      );
+      setSelectedTradeId(nextTrade.id);
+      resetJournalEdit();
+    } catch (caught) {
+      setJournalError(
+        caught instanceof Error
+          ? caught.message
+          : "Unable to save this journal entry. Try again."
+      );
+    } finally {
+      setJournalSaving(false);
+    }
+  }
+
   function requestDelete(trade: TradeDto) {
     setDeleteCandidate(trade);
     setError(null);
@@ -3862,7 +4059,14 @@ export default function TradeJournal({
             <JournalReviewView
               trades={trades}
               playbooks={playbooks}
-              onEdit={startEdit}
+              editingId={editingJournalId}
+              form={journalForm}
+              saving={journalSaving}
+              error={journalError}
+              onStartEdit={startJournalEdit}
+              onCancelEdit={resetJournalEdit}
+              onSubmitEdit={handleJournalSubmit}
+              onUpdateForm={updateJournalForm}
               onAddTrade={openNewTrade}
             />
           ) : null}
