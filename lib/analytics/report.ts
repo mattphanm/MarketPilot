@@ -41,6 +41,7 @@ export type AnalyticsReport = {
   grossLoss: number;
   winRate: number | null;
   profitFactor: number | null;
+  averageRMultiple: number | null;
   averageWin: number;
   averageLoss: number;
   averageWinLoss: number | null;
@@ -260,6 +261,10 @@ export function createAnalyticsReport(
   const winningTrades = closedPnl.filter((pnl) => pnl > 0).length;
   const losingTrades = closedPnl.filter((pnl) => pnl < 0).length;
   const breakevenTrades = closedPnl.filter((pnl) => pnl === 0).length;
+  const totalRMultiple = filteredTrades.reduce(
+    (total, trade) => total + trade.rMultiple,
+    0
+  );
   const daily = aggregateDaily(filteredTrades);
   let cumulativePnl = 0;
   const equityCurve = daily.map((day) => {
@@ -291,6 +296,8 @@ export function createAnalyticsReport(
     grossLoss,
     winRate: closedPnl.length > 0 ? winningTrades / closedPnl.length : null,
     profitFactor: grossLoss < 0 ? grossProfit / Math.abs(grossLoss) : null,
+    averageRMultiple:
+      filteredTrades.length > 0 ? totalRMultiple / filteredTrades.length : null,
     averageWin: winningTrades > 0 ? grossProfit / winningTrades : 0,
     averageLoss: losingTrades > 0 ? grossLoss / losingTrades : 0,
     averageWinLoss:

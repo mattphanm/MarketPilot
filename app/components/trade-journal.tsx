@@ -198,8 +198,6 @@ const rangeOptions: Array<{ key: AnalyticsRangeKey; label: string }> = [
   { key: "ytd", label: "YTD" },
 ];
 
-const allocationColors = ["#6C5DD3", "#16A779", "#3B82F6", "#D99A20", "#E25555"];
-
 function createEmptyForm(nowIso: string): TradeFormState {
   return {
     playbookId: "",
@@ -338,6 +336,10 @@ function formatRatio(value: number | null) {
   return value === null ? "-" : ratioFormatter.format(value);
 }
 
+function formatRMultiple(value: number | null) {
+  return value === null ? "-" : `${formatSignedRatio(value)}R`;
+}
+
 function formatSignedRatio(value: number | null) {
   if (value === null) {
     return "-";
@@ -427,10 +429,6 @@ function getDirectionLabel(side: TradeSide) {
   return side === "long" ? "Long" : "Short";
 }
 
-function getTradeRisk(trade: TradeDto) {
-  return trade.riskDollars;
-}
-
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, value));
 }
@@ -502,26 +500,6 @@ function getEquityChart(points: EquityPoint[]) {
     .join(" ");
 
   return { width, height, linePoints, zeroY: yFor(0) };
-}
-
-function buildSymbolAllocation(trades: TradeDto[]) {
-  const totals = new Map<string, number>();
-
-  for (const trade of trades) {
-    totals.set(trade.symbol, (totals.get(trade.symbol) ?? 0) + getTradeRisk(trade));
-  }
-
-  const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
-
-  return [...totals.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([symbol, value], index) => ({
-      symbol,
-      value,
-      percent: total > 0 ? value / total : 0,
-      color: allocationColors[index % allocationColors.length],
-    }));
 }
 
 function buildPlaybooks(
@@ -1345,18 +1323,17 @@ function DashboardOverview({
   onNav: (view: DashboardView) => void;
 }) {
   const recentTrades = trades.slice(0, 8);
-  const allocation = buildSymbolAllocation(trades);
-  const loggedRisk = trades.reduce((sum, trade) => sum + getTradeRisk(trade), 0);
   const dailyBars = report.daily.filter((day) => day.closedTrades > 0).slice(-30);
   const maxDailyAbs = Math.max(1, ...dailyBars.map((day) => Math.abs(day.pnl)));
+  const completedTrades = report.closedTrades;
 
   return (
     <div className="space-y-4 p-4 lg:p-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Net P&L"
           value={formatCompactMoney(report.netPnl)}
-          detail={`${numberFormatter.format(report.closedTrades)} completed trades`}
+          detail={`${numberFormatter.format(completedTrades)} completed trades`}
           tone={getMoneyTone(report.netPnl)}
         />
         <MetricCard
@@ -1365,29 +1342,48 @@ function DashboardOverview({
           detail={`${numberFormatter.format(report.winningTrades)} wins, ${numberFormatter.format(report.losingTrades)} losses`}
         />
         <MetricCard
+          label="Total Trades"
+          value={numberFormatter.format(completedTrades)}
+          detail="Completed futures trades"
+        />
+        <MetricCard
+          label="Average R"
+          value={formatRMultiple(report.averageRMultiple)}
+          detail="Mean R multiple"
+          tone={getMoneyTone(report.averageRMultiple)}
+        />
+        <MetricCard
+          label="Average Win"
+          value={formatCompactMoney(report.averageWin)}
+          detail={`${numberFormatter.format(report.winningTrades)} winning trades`}
+          tone="profit"
+        />
+        <MetricCard
+          label="Average Loss"
+          value={formatCompactMoney(report.averageLoss)}
+          detail={`${numberFormatter.format(report.losingTrades)} losing trades`}
+          tone="loss"
+        />
+        <MetricCard
           label="Profit Factor"
           value={formatRatio(report.profitFactor)}
           detail={`${formatCompactMoney(report.grossProfit)} gross profit`}
         />
-        <MetricCard
-          label="Expectancy"
-          value={formatCompactMoney(report.expectancy)}
-          detail="Per completed trade"
-          tone={getMoneyTone(report.expectancy)}
-        />
-        <MetricCard
-          label="Logged Risk"
-          value={formatCompactMoney(loggedRisk)}
-          detail={`${numberFormatter.format(trades.length)} total records`}
-        />
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.45fr)]">
+      {completedTrades === 0 ? (
+        <EmptyState
+          title="No completed trades yet"
+          body="Log completed futures trades to populate net P&L, win rate, average R, average win, average loss, and profit factor."
+        />
+      ) : null}
+
+      <div className="grid gap-3">
         <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[13px] font-semibold text-[#171923]">
-                Performance Curve
+                Completed Trade P&L Curve
               </h2>
               <p className="mt-1 text-[11px] text-[#697386]">
                 {numberFormatter.format(report.activeDays)} active days
@@ -1402,51 +1398,6 @@ function DashboardOverview({
             </p>
           </div>
           <EquityChart report={report} chart={equityChart} />
-        </section>
-
-        <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
-          <div className="mb-3">
-            <h2 className="text-[13px] font-semibold text-[#171923]">
-              Symbol Allocation
-            </h2>
-            <p className="mt-1 text-[11px] text-[#697386]">
-              Based on logged risk by symbol
-            </p>
-          </div>
-
-          {allocation.length === 0 ? (
-            <div className="flex h-44 items-center justify-center text-center text-sm text-[#697386]">
-              No symbol exposure yet.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {allocation.map((item) => (
-                <div key={item.symbol}>
-                  <div className="mb-1 flex items-center justify-between gap-3 text-[11px]">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ background: item.color }}
-                      />
-                      <span className="font-medium text-[#171923]">{item.symbol}</span>
-                    </div>
-                    <span className="text-[#697386]">
-                      {percentFormatter.format(item.percent)}
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full bg-[#EEF0F5]">
-                    <div
-                      className="h-2 rounded-full"
-                      style={{
-                        width: `${clampScore(item.percent * 100)}%`,
-                        background: item.color,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </section>
       </div>
 

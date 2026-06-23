@@ -69,7 +69,7 @@ function serializePlaybook(playbook: {
 }
 
 const features = [
-  { icon: BarChart2, label: "Portfolio Analytics", desc: "P&L curves, drawdown, risk-adjusted returns" },
+  { icon: BarChart2, label: "Performance Analytics", desc: "P&L curves, drawdown, risk-adjusted returns" },
   { icon: BookOpen, label: "Structured Journaling", desc: "Thesis, risk plan, catalyst, and post-trade review" },
   { icon: Target, label: "Playbook System", desc: "Define, track, and improve repeatable setups" },
 ] as const;

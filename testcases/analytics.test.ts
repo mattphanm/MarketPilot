@@ -124,6 +124,7 @@ describe("analytics report calculations", () => {
     expect(report.grossLoss).toBe(-20);
     expect(report.winRate).toBe(0.6);
     expect(report.profitFactor).toBe(7);
+    expect(report.averageRMultiple).toBe(0.4);
     expect(report.expectancy).toBe(24);
   });
 
@@ -136,6 +137,7 @@ describe("analytics report calculations", () => {
     expect(report.totalTrades).toBe(4);
     expect(report.closedTrades).toBe(4);
     expect(report.netPnl).toBe(100);
+    expect(report.averageRMultiple).toBe(0.25);
     expect(report.daily.map((day) => day.dateKey)).toEqual([
       "2026-06-03",
       "2026-06-04",
