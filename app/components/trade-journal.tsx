@@ -43,6 +43,7 @@ import {
 } from "@/lib/trades/date-input";
 import {
   createAnalyticsReport,
+  filterAnalyticsTradesByEntryTime,
   getTradePnl,
   type AnalyticsRangeKey,
   type AnalyticsReport,
@@ -1682,13 +1683,99 @@ function AnalyticsView({
   report,
   score,
   radarPoints,
+  playbooks,
+  analyticsRange,
+  analyticsStart,
+  analyticsEnd,
+  onRangeChange,
+  onStartChange,
+  onEndChange,
+  onClearCustomRange,
 }: {
   report: AnalyticsReport;
   score: ReturnType<typeof buildScoreMetrics>;
   radarPoints: string;
+  playbooks: PlaybookSummary[];
+  analyticsRange: AnalyticsRangeKey;
+  analyticsStart: string;
+  analyticsEnd: string;
+  onRangeChange: (range: AnalyticsRangeKey) => void;
+  onStartChange: (value: string) => void;
+  onEndChange: (value: string) => void;
+  onClearCustomRange: () => void;
 }) {
+  const hasCustomRange = analyticsStart !== "" || analyticsEnd !== "";
+
   return (
     <div className="grid gap-4 p-4 lg:grid-cols-[minmax(280px,0.42fr)_minmax(0,0.58fr)] lg:p-5">
+      <section className="rounded-lg border border-[#E6E8EF] bg-white p-4 lg:col-span-2">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[#171923]">
+              Completed Trade Analytics
+            </h2>
+            <p className="mt-1 text-[11px] text-[#697386]">
+              Metrics filter by entry time and include completed futures trades only.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-0.5">
+              {rangeOptions.map((option) => {
+                const selected = !hasCustomRange && analyticsRange === option.key;
+
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => onRangeChange(option.key)}
+                    className={`h-8 min-w-11 rounded-md px-2 text-[11px] font-semibold transition ${
+                      selected
+                        ? "bg-white text-[#6C5DD3] shadow-sm"
+                        : "text-[#697386] hover:text-[#171923]"
+                    }`}
+                    aria-pressed={selected}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="grid gap-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#697386]">
+              Start
+              <input
+                type="date"
+                value={analyticsStart}
+                onChange={(event) => onStartChange(event.target.value)}
+                className="h-8 rounded-md border border-[#D8DCE7] bg-white px-2 text-[12px] font-medium normal-case tracking-normal text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/20"
+              />
+            </label>
+
+            <label className="grid gap-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#697386]">
+              End
+              <input
+                type="date"
+                value={analyticsEnd}
+                min={analyticsStart || undefined}
+                onChange={(event) => onEndChange(event.target.value)}
+                className="h-8 rounded-md border border-[#D8DCE7] bg-white px-2 text-[12px] font-medium normal-case tracking-normal text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/20"
+              />
+            </label>
+
+            {hasCustomRange ? (
+              <button
+                type="button"
+                onClick={onClearCustomRange}
+                className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[11px] font-medium text-[#697386] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
       <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1696,7 +1783,7 @@ function AnalyticsView({
               MarketPilot Score
             </h2>
             <p className="mt-1 text-[11px] text-[#697386]">
-              {numberFormatter.format(report.closedTrades)} closed trades
+              {numberFormatter.format(report.closedTrades)} completed trades
             </p>
           </div>
           <p className="text-[28px] font-bold leading-none text-[#171923]">
@@ -1819,6 +1906,89 @@ function AnalyticsView({
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-[#E6E8EF] bg-white p-4 lg:col-span-2">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[#171923]">
+              Playbook Performance
+            </h2>
+            <p className="mt-1 text-[11px] text-[#697386]">
+              Completed trades grouped by assigned playbook in the selected entry-time range.
+            </p>
+          </div>
+        </div>
+
+        {playbooks.length === 0 ? (
+          <div className="flex h-32 items-center justify-center rounded-lg bg-[#F7F8FA] px-4 text-center text-sm text-[#697386]">
+            Create playbooks and assign completed trades to compare setup performance.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse">
+              <thead>
+                <tr className="border-b border-[#E6E8EF] text-left">
+                  {["Playbook", "Trades", "Win Rate", "Avg P&L", "Avg R", "Best", "Worst"].map(
+                    (heading) => (
+                      <th
+                        key={heading}
+                        className="px-2 py-2 text-[10px] font-medium text-[#697386]"
+                      >
+                        {heading}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {playbooks.map((playbook) => (
+                  <tr key={playbook.id} className="border-b border-[#F1F3F7] last:border-0">
+                    <td className="px-2 py-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: playbook.color }}
+                        />
+                        <span className="text-[12px] font-semibold text-[#171923]">
+                          {playbook.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-2 py-2 text-[12px] text-[#697386]">
+                      {numberFormatter.format(playbook.totalTrades)}
+                    </td>
+                    <td className="px-2 py-2 text-[12px] text-[#697386]">
+                      {formatPercent(playbook.winRate)}
+                    </td>
+                    <td
+                      className={`px-2 py-2 text-[12px] font-semibold ${getMetricValueClass(
+                        getMoneyTone(playbook.averagePnl)
+                      )}`}
+                    >
+                      {formatOptionalMoney(playbook.averagePnl)}
+                    </td>
+                    <td
+                      className={`px-2 py-2 text-[12px] font-semibold ${getMetricValueClass(
+                        getMoneyTone(playbook.averageRMultiple)
+                      )}`}
+                    >
+                      {playbook.averageRMultiple === null
+                        ? "-"
+                        : `${formatSignedRatio(playbook.averageRMultiple)}R`}
+                    </td>
+                    <td className="px-2 py-2 text-[12px] text-[#697386]">
+                      {formatPlaybookTrade(playbook.bestTrade, playbook.bestTradePnl)}
+                    </td>
+                    <td className="px-2 py-2 text-[12px] text-[#697386]">
+                      {formatPlaybookTrade(playbook.worstTrade, playbook.worstTradePnl)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -3500,6 +3670,8 @@ export default function TradeJournal({
   const [activeView, setActiveView] = useState<DashboardView>("dashboard");
   const [analyticsRange, setAnalyticsRange] =
     useState<AnalyticsRangeKey>("all");
+  const [analyticsStart, setAnalyticsStart] = useState("");
+  const [analyticsEnd, setAnalyticsEnd] = useState("");
   const [form, setForm] = useState<TradeFormState>(() => createEmptyForm(nowIso));
   const [playbookForm, setPlaybookForm] = useState<PlaybookFormState>(() =>
     createEmptyPlaybookForm()
@@ -3553,9 +3725,26 @@ export default function TradeJournal({
     [selectedTradeId, trades]
   );
 
+  const analyticsOptions = useMemo(
+    () => ({
+      range: analyticsRange,
+      start: analyticsStart ? new Date(`${analyticsStart}T00:00:00.000Z`) : undefined,
+      end: analyticsEnd ? new Date(`${analyticsEnd}T00:00:00.000Z`) : undefined,
+      now: currentDate,
+    }),
+    [analyticsEnd, analyticsRange, analyticsStart, currentDate]
+  );
   const analyticsReport = useMemo(
-    () => createAnalyticsReport(trades, { range: analyticsRange, now: currentDate }),
-    [analyticsRange, currentDate, trades]
+    () => createAnalyticsReport(trades, analyticsOptions),
+    [analyticsOptions, trades]
+  );
+  const analyticsTrades = useMemo(
+    () => filterAnalyticsTradesByEntryTime(trades, analyticsOptions),
+    [analyticsOptions, trades]
+  );
+  const analyticsPlaybooks = useMemo(
+    () => buildPlaybooks(playbooks, analyticsTrades),
+    [analyticsTrades, playbooks]
   );
   const score = useMemo(
     () => buildScoreMetrics(analyticsReport),
@@ -3577,6 +3766,25 @@ export default function TradeJournal({
       direction:
         current.key === key && current.direction === "desc" ? "asc" : "desc",
     }));
+  }
+
+  function updateAnalyticsRange(range: AnalyticsRangeKey) {
+    setAnalyticsRange(range);
+    setAnalyticsStart("");
+    setAnalyticsEnd("");
+  }
+
+  function updateAnalyticsStart(value: string) {
+    setAnalyticsStart(value);
+
+    if (analyticsEnd && value && analyticsEnd < value) {
+      setAnalyticsEnd(value);
+    }
+  }
+
+  function clearAnalyticsCustomRange() {
+    setAnalyticsStart("");
+    setAnalyticsEnd("");
   }
 
   function updateForm<Key extends keyof TradeFormState>(
@@ -3978,7 +4186,7 @@ export default function TradeJournal({
           subtitle={meta.subtitle}
           userName={displayName}
           analyticsRange={analyticsRange}
-          onRangeChange={setAnalyticsRange}
+          onRangeChange={updateAnalyticsRange}
         />
         <MobileNav activeView={activeView} onNav={setActiveView} />
 
@@ -4041,6 +4249,14 @@ export default function TradeJournal({
               report={analyticsReport}
               score={score}
               radarPoints={radarPoints}
+              playbooks={analyticsPlaybooks}
+              analyticsRange={analyticsRange}
+              analyticsStart={analyticsStart}
+              analyticsEnd={analyticsEnd}
+              onRangeChange={updateAnalyticsRange}
+              onStartChange={updateAnalyticsStart}
+              onEndChange={setAnalyticsEnd}
+              onClearCustomRange={clearAnalyticsCustomRange}
             />
           ) : null}
 

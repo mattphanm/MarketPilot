@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildCalendarMonth,
   createAnalyticsReport,
+  filterAnalyticsTradesByEntryTime,
   type AnalyticsTrade,
 } from "../lib/analytics/report";
+import { buildPlaybookPerformance } from "../lib/playbooks/performance";
+import type { PlaybookDto } from "../lib/playbooks/types";
+import type { TradeDto } from "../lib/trades/types";
 
 type TestPath = "happy" | "edge" | "failure";
 
@@ -110,6 +114,27 @@ const analyticsTrades: AnalyticsTrade[] = [
   },
 ];
 
+const playbooks: PlaybookDto[] = [
+  {
+    id: "breakout",
+    name: "Breakout",
+    description: "Opening range continuation",
+    color: "#6C5DD3",
+    rules: ["Range cleared"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "reversal",
+    name: "Reversal",
+    description: "Failed move fade",
+    color: "#00B8A9",
+    rules: ["Failed breakout"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
 describe("analytics report calculations", () => {
   it("calculates completed futures performance from risk and R", () => {
     const report = createAnalyticsReport(analyticsTrades, {
@@ -143,6 +168,86 @@ describe("analytics report calculations", () => {
       "2026-06-04",
       "2026-06-10",
       "2026-06-11",
+    ]);
+  });
+
+  it("filters metrics by explicit entry-time start and end dates", () => {
+    const report = createAnalyticsReport(analyticsTrades, {
+      start: new Date("2026-06-04T00:00:00.000Z"),
+      end: new Date("2026-06-10T00:00:00.000Z"),
+      now: new Date("2026-06-20T12:00:00.000Z"),
+    });
+
+    expect(report.totalTrades).toBe(2);
+    expect(report.closedTrades).toBe(2);
+    expect(report.netPnl).toBe(0);
+    expect(report.daily.map((day) => day.dateKey)).toEqual([
+      "2026-06-04",
+      "2026-06-10",
+    ]);
+  });
+
+  it("uses the same entry-time filter for playbook performance inputs", () => {
+    const trades: TradeDto[] = [
+      {
+        id: "aapl-win",
+        symbol: "AAPL",
+        side: "long" as const,
+        riskDollars: 100,
+        rMultiple: 1,
+        openedAt: "2026-06-03T14:00:00.000Z",
+        playbookId: "breakout",
+        createdAt: "2026-06-03T14:00:00.000Z",
+        updatedAt: "2026-06-03T14:00:00.000Z",
+        journalEntry: null,
+      },
+      {
+        id: "msft-loss",
+        symbol: "MSFT",
+        side: "long" as const,
+        riskDollars: 20,
+        rMultiple: -1,
+        openedAt: "2026-06-04T14:00:00.000Z",
+        playbookId: "breakout",
+        createdAt: "2026-06-04T14:00:00.000Z",
+        updatedAt: "2026-06-04T14:00:00.000Z",
+        journalEntry: null,
+      },
+      {
+        id: "tsla-short-win",
+        symbol: "TSLA",
+        side: "short" as const,
+        riskDollars: 20,
+        rMultiple: 1,
+        openedAt: "2026-06-10T14:00:00.000Z",
+        playbookId: "reversal",
+        createdAt: "2026-06-10T14:00:00.000Z",
+        updatedAt: "2026-06-10T14:00:00.000Z",
+        journalEntry: null,
+      },
+    ];
+
+    const filteredTrades = filterAnalyticsTradesByEntryTime(trades, {
+      start: new Date("2026-06-04T00:00:00.000Z"),
+      end: new Date("2026-06-10T00:00:00.000Z"),
+    });
+    const performance = buildPlaybookPerformance(playbooks, filteredTrades);
+
+    expect(filteredTrades.map((trade) => trade.id)).toEqual([
+      "msft-loss",
+      "tsla-short-win",
+    ]);
+    expect(performance).toMatchObject([
+      {
+        playbook: { id: "breakout" },
+        totalTrades: 1,
+        averagePnl: -20,
+      },
+      {
+        playbook: { id: "reversal" },
+        totalTrades: 1,
+        averagePnl: 20,
+      },
     ]);
   });
 

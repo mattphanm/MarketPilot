@@ -8,11 +8,11 @@ Build the Analytics tab for completed futures Trades. Analytics should use date-
 
 ## Acceptance criteria
 
-- [ ] Analytics tab shows completed-trade-only metrics.
-- [ ] Date range filters metrics by entry time.
-- [ ] Analytics include playbook performance where relevant.
-- [ ] Analytics exclude open/planned/partial/live portfolio concepts.
-- [ ] Visual test: capture a screenshot of Analytics tab with filtered metrics and chart/table output.
+- [x] Analytics tab shows completed-trade-only metrics.
+- [x] Date range filters metrics by entry time.
+- [x] Analytics include playbook performance where relevant.
+- [x] Analytics exclude open/planned/partial/live portfolio concepts.
+- [ ] Visual test: capture a screenshot of Analytics tab with filtered metrics and chart/table output. Skipped per user request.
 
 ## Blocked by
 

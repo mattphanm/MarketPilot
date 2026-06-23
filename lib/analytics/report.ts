@@ -191,6 +191,17 @@ function isInsideBounds(date: Date, bounds: { start: Date | null; end: Date | nu
   return true;
 }
 
+export function filterAnalyticsTradesByEntryTime<TTrade extends AnalyticsTrade>(
+  trades: TTrade[],
+  options: ReportOptions = {}
+) {
+  const bounds = getRangeBounds(options);
+
+  return trades.filter((trade) =>
+    isInsideBounds(getTradeActivityDate(trade), bounds)
+  );
+}
+
 function createBucket(dateKey: string): DailyBucket {
   return {
     dateKey,
@@ -245,10 +256,7 @@ export function createAnalyticsReport(
   options: ReportOptions = {}
 ): AnalyticsReport {
   const range = options.range ?? "all";
-  const bounds = getRangeBounds(options);
-  const filteredTrades = trades.filter((trade) =>
-    isInsideBounds(getTradeActivityDate(trade), bounds)
-  );
+  const filteredTrades = filterAnalyticsTradesByEntryTime(trades, options);
   const closedPnl = filteredTrades
     .map(getTradePnl);
   const grossProfit = closedPnl
