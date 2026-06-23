@@ -23,6 +23,19 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type TooltipContentProps,
+} from "recharts";
 import { signOutUser } from "@/app/actions/auth";
 import {
   formatTradeDateInput,
@@ -33,7 +46,6 @@ import {
   getTradePnl,
   type AnalyticsRangeKey,
   type AnalyticsReport,
-  type EquityPoint,
 } from "@/lib/analytics/report";
 import { buildPlaybookPerformance } from "@/lib/playbooks/performance";
 import type { PlaybookDto, PlaybookPayload } from "@/lib/playbooks/types";
@@ -115,6 +127,13 @@ type PlaybookSummary = {
   worstTrade: TradeDto | null;
   worstTradePnl: number | null;
   trades: TradeDto[];
+};
+
+type ChartPoint = {
+  dateKey: string;
+  label: string;
+  pnl: number;
+  cumulativePnl: number;
 };
 
 const moneyFormatter = new Intl.NumberFormat("en-US", {
@@ -473,33 +492,6 @@ function getRadarPoints(metrics: Array<{ value: number }>) {
       return `${50 + Math.cos(angle) * radius},${50 + Math.sin(angle) * radius}`;
     })
     .join(" ");
-}
-
-function getEquityChart(points: EquityPoint[]) {
-  const width = 640;
-  const height = 220;
-  const padding = 18;
-
-  if (points.length === 0) {
-    return { width, height, linePoints: "", zeroY: height / 2 };
-  }
-
-  const values = points.map((point) => point.cumulativePnl);
-  const min = Math.min(0, ...values);
-  const max = Math.max(0, ...values);
-  const span = max - min || 1;
-  const xStep =
-    points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
-  const yFor = (value: number) =>
-    height - padding - ((value - min) / span) * (height - padding * 2);
-  const linePoints = points
-    .map(
-      (point, index) =>
-        `${padding + index * xStep},${yFor(point.cumulativePnl)}`
-    )
-    .join(" ");
-
-  return { width, height, linePoints, zeroY: yFor(0) };
 }
 
 function buildPlaybooks(
@@ -1256,54 +1248,142 @@ function TopBar({
   );
 }
 
-function EquityChart({
+function buildChartPoints(report: AnalyticsReport): ChartPoint[] {
+  const dailyByDate = new Map(report.daily.map((day) => [day.dateKey, day]));
+
+  return report.equityCurve.map((point) => ({
+    dateKey: point.dateKey,
+    label: formatShortDate(`${point.dateKey}T00:00:00.000Z`),
+    pnl: dailyByDate.get(point.dateKey)?.pnl ?? point.pnl,
+    cumulativePnl: point.cumulativePnl,
+  }));
+}
+
+function ChartTooltip({ active, label, payload }: TooltipContentProps) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 shadow-lg">
+      <p className="text-[11px] font-semibold text-[#171923]">{label}</p>
+      <div className="mt-1 space-y-1">
+        {payload.map((entry) => {
+          const value = typeof entry.value === "number" ? entry.value : null;
+
+          return (
+            <p
+              key={String(entry.dataKey)}
+              className="flex items-center justify-between gap-5 text-[11px]"
+            >
+              <span style={{ color: entry.color }}>{entry.name}</span>
+              <span className="font-semibold text-[#171923]">
+                {value === null ? "-" : formatMoney(value)}
+              </span>
+            </p>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EmptyChart({ children }: { children: string }) {
+  return (
+    <div className="flex h-full items-center justify-center px-4 text-center text-sm text-[#697386]">
+      {children}
+    </div>
+  );
+}
+
+function EquityCurveChart({
   report,
-  chart,
+  data,
 }: {
   report: AnalyticsReport;
-  chart: ReturnType<typeof getEquityChart>;
+  data: ChartPoint[];
 }) {
   return (
     <div className="h-[220px] overflow-hidden rounded-lg border border-[#EEF0F5] bg-[#F7F8FA]">
-      {report.equityCurve.length === 0 ? (
-        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-[#697386]">
-          No closed trades in this period.
-        </div>
+      {data.length === 0 ? (
+        <EmptyChart>No completed trades in this period.</EmptyChart>
       ) : (
-        <svg
-          viewBox={`0 0 ${chart.width} ${chart.height}`}
-          className="h-full w-full"
-          role="img"
-          aria-label="Daily cumulative P&L chart"
-        >
-          {[0.25, 0.5, 0.75].map((offset) => (
-            <line
-              key={offset}
-              x1="0"
-              x2={chart.width}
-              y1={chart.height * offset}
-              y2={chart.height * offset}
-              stroke="#E6E8EF"
-              strokeWidth="1"
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={data}
+            margin={{ top: 18, right: 18, bottom: 8, left: 6 }}
+            accessibilityLayer
+          >
+            <CartesianGrid stroke="#E6E8EF" vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fill: "#697386", fontSize: 11 }}
+              tickLine={false}
+              axisLine={{ stroke: "#E6E8EF" }}
+              minTickGap={28}
             />
-          ))}
-          <line
-            x1="0"
-            x2={chart.width}
-            y1={chart.zeroY}
-            y2={chart.zeroY}
-            stroke="#CBD5E1"
-            strokeWidth="1"
-          />
-          <polyline
-            points={chart.linePoints}
-            fill="none"
-            stroke={report.netPnl >= 0 ? "#6C5DD3" : "#E25555"}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="4"
-          />
-        </svg>
+            <YAxis
+              tick={{ fill: "#697386", fontSize: 11 }}
+              tickFormatter={formatCompactMoney}
+              tickLine={false}
+              axisLine={false}
+              width={58}
+            />
+            <Tooltip content={(props) => <ChartTooltip {...props} />} />
+            <Line
+              type="monotone"
+              dataKey="cumulativePnl"
+              name="Equity"
+              stroke={report.netPnl >= 0 ? "#6C5DD3" : "#E25555"}
+              strokeWidth={3}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
+
+function DailyPnlChart({ data }: { data: ChartPoint[] }) {
+  return (
+    <div className="h-40 overflow-hidden rounded-lg border border-[#EEF0F5] bg-[#F7F8FA]">
+      {data.length === 0 ? (
+        <EmptyChart>No realized daily P&L yet.</EmptyChart>
+      ) : (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            margin={{ top: 14, right: 12, bottom: 4, left: 2 }}
+            accessibilityLayer
+          >
+            <CartesianGrid stroke="#E6E8EF" vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fill: "#697386", fontSize: 10 }}
+              tickLine={false}
+              axisLine={{ stroke: "#E6E8EF" }}
+              minTickGap={18}
+            />
+            <YAxis
+              tick={{ fill: "#697386", fontSize: 10 }}
+              tickFormatter={formatCompactMoney}
+              tickLine={false}
+              axisLine={false}
+              width={52}
+            />
+            <Tooltip content={(props) => <ChartTooltip {...props} />} />
+            <Bar dataKey="pnl" name="Daily P&L" radius={[3, 3, 0, 0]}>
+              {data.map((point) => (
+                <Cell
+                  key={point.dateKey}
+                  fill={point.pnl >= 0 ? "#16A779" : "#E25555"}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       )}
     </div>
   );
@@ -1313,18 +1393,16 @@ function DashboardOverview({
   trades,
   report,
   score,
-  equityChart,
   onNav,
 }: {
   trades: TradeDto[];
   report: AnalyticsReport;
   score: ReturnType<typeof buildScoreMetrics>;
-  equityChart: ReturnType<typeof getEquityChart>;
   onNav: (view: DashboardView) => void;
 }) {
   const recentTrades = trades.slice(0, 8);
-  const dailyBars = report.daily.filter((day) => day.closedTrades > 0).slice(-30);
-  const maxDailyAbs = Math.max(1, ...dailyBars.map((day) => Math.abs(day.pnl)));
+  const chartData = buildChartPoints(report);
+  const dailyChartData = chartData.slice(-30);
   const completedTrades = report.closedTrades;
 
   return (
@@ -1397,7 +1475,7 @@ function DashboardOverview({
               {formatMoney(report.netPnl)}
             </p>
           </div>
-          <EquityChart report={report} chart={equityChart} />
+          <EquityCurveChart report={report} data={chartData} />
         </section>
       </div>
 
@@ -1406,36 +1484,11 @@ function DashboardOverview({
           <div className="mb-3">
             <h2 className="text-[13px] font-semibold text-[#171923]">Daily P&L</h2>
             <p className="mt-1 text-[11px] text-[#697386]">
-              Last {numberFormatter.format(dailyBars.length)} realized days
+              Last {numberFormatter.format(dailyChartData.length)} realized days
             </p>
           </div>
 
-          {dailyBars.length === 0 ? (
-            <div className="flex h-40 items-center justify-center text-center text-sm text-[#697386]">
-              No realized daily P&L yet.
-            </div>
-          ) : (
-            <div className="flex h-40 items-end gap-1 border-b border-[#E6E8EF] pb-2">
-              {dailyBars.map((day) => {
-                const barHeight = Math.max(8, (Math.abs(day.pnl) / maxDailyAbs) * 100);
-
-                return (
-                  <div
-                    key={day.dateKey}
-                    className="flex min-w-2 flex-1 items-end justify-center"
-                    title={`${day.dateKey}: ${formatMoney(day.pnl)}`}
-                  >
-                    <div
-                      className={`w-full rounded-t-sm ${
-                        day.pnl >= 0 ? "bg-[#16A779]" : "bg-[#E25555]"
-                      }`}
-                      style={{ height: `${barHeight}%` }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <DailyPnlChart data={dailyChartData} />
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="rounded-lg bg-emerald-50 p-2">
@@ -3508,10 +3561,6 @@ export default function TradeJournal({
     () => buildScoreMetrics(analyticsReport),
     [analyticsReport]
   );
-  const equityChart = useMemo(
-    () => getEquityChart(analyticsReport.equityCurve),
-    [analyticsReport.equityCurve]
-  );
   const radarPoints = useMemo(() => getRadarPoints(score.metrics), [score.metrics]);
   const filteredTrades = useMemo(() => {
     return filterAndSortTradeLogRows(trades, {
@@ -3939,7 +3988,6 @@ export default function TradeJournal({
               trades={trades}
               report={analyticsReport}
               score={score}
-              equityChart={equityChart}
               onNav={setActiveView}
             />
           ) : null}
