@@ -742,7 +742,7 @@ function TradeDetailDrawer({
       role="dialog"
       aria-modal="true"
       aria-label={`${trade.symbol} trade detail`}
-      className="fixed inset-0 z-40 flex justify-end bg-[#171923]/20"
+      className="fixed inset-0 z-40 flex justify-end overflow-hidden bg-[#171923]/20"
     >
       <button
         type="button"
@@ -750,13 +750,13 @@ function TradeDetailDrawer({
         onClick={onClose}
         className="hidden flex-1 cursor-default lg:block"
       />
-      <aside className="flex h-full w-full max-w-[440px] flex-col border-l border-[#E6E8EF] bg-white shadow-[-18px_0_40px_rgba(17,24,39,0.12)] sm:max-w-[420px]">
-        <div className="flex items-start justify-between gap-4 border-b border-[#E6E8EF] px-5 py-4">
+      <aside className="flex h-full w-full max-w-[440px] flex-col border-l border-[#E6E8EF] bg-white shadow-[-18px_0_40px_rgba(17,24,39,0.12)]">
+        <div className="flex items-start justify-between gap-3 border-b border-[#E6E8EF] px-4 py-4 sm:gap-4 sm:px-5">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase text-[#697386]">
               Trade Detail
             </p>
-            <div className="mt-2 flex min-w-0 items-center gap-2">
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
               <h2 className="truncate text-[22px] font-bold leading-tight text-[#171923]">
                 {trade.symbol}
               </h2>
@@ -794,8 +794,8 @@ function TradeDetailDrawer({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <div className="grid grid-cols-3 gap-2">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-3">
             {([
               {
                 label: "Realized P&L",
@@ -839,7 +839,7 @@ function TradeDetailDrawer({
               {factRows.map(([label, value]) => (
                 <div
                   key={label}
-                  className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[12px]"
+                  className="grid grid-cols-[minmax(88px,120px)_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[12px]"
                 >
                   <span className="text-[#697386]">{label}</span>
                   <span
@@ -956,14 +956,14 @@ function DeleteTradeDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-trade-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-3 sm:p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget && !deleting) {
           onCancel();
         }
       }}
     >
-      <div className="w-full max-w-[420px] rounded-lg bg-white shadow-2xl">
+      <div className="max-h-[calc(100vh-24px)] w-full max-w-[420px] overflow-y-auto rounded-lg bg-white shadow-2xl sm:max-h-[calc(100vh-32px)]">
         <div className="border-b border-[#E6E8EF] px-5 py-4">
           <p
             id="delete-trade-title"
@@ -977,7 +977,7 @@ function DeleteTradeDialog({
           </p>
         </div>
         <div className="px-5 py-4 text-[12px] text-[#4B5565]">
-          <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 rounded-md border border-[#E6E8EF] bg-[#F7F8FA] p-3">
+          <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 rounded-md border border-[#E6E8EF] bg-[#F7F8FA] p-3 sm:grid-cols-[96px_minmax(0,1fr)]">
             <span className="text-[#697386]">Opened</span>
             <span className="text-right font-medium text-[#171923]">
               {formatDate(trade.openedAt)}
@@ -988,7 +988,7 @@ function DeleteTradeDialog({
             </span>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E6E8EF] px-5 py-4">
+        <div className="flex flex-col-reverse gap-2 border-t border-[#E6E8EF] px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onCancel}
@@ -1137,18 +1137,20 @@ function MobileNav({
     <nav className="flex gap-2 overflow-x-auto border-b border-[#E6E8EF] bg-white px-4 py-2 lg:hidden">
       {navItems.map((item) => {
         const selected = activeView === item.id;
+        const Icon = item.icon;
 
         return (
           <button
             key={item.id}
             type="button"
             onClick={() => onNav(item.id)}
-            className={`h-8 shrink-0 rounded-md border px-3 text-[12px] font-medium ${
+            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[12px] font-medium ${
               selected
                 ? "border-[#6C5DD3] bg-[#6C5DD3] text-white"
                 : "border-[#E6E8EF] bg-white text-[#697386]"
             }`}
           >
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
             {item.label}
           </button>
         );
@@ -1171,7 +1173,7 @@ function TopBar({
   onRangeChange: (range: AnalyticsRangeKey) => void;
 }) {
   return (
-    <header className="flex min-h-[54px] shrink-0 flex-col gap-3 border-b border-[#E6E8EF] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-5">
+    <header className="flex min-h-[54px] shrink-0 flex-col gap-3 border-b border-[#E6E8EF] bg-white px-4 py-3 xl:flex-row xl:items-center xl:justify-between lg:px-5">
       <div className="min-w-0">
         <h1 className="truncate text-[15px] font-semibold leading-tight text-[#171923]">
           {title}
@@ -1179,7 +1181,7 @@ function TopBar({
         <p className="mt-0.5 truncate text-[11px] text-[#697386]">{subtitle}</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <button
           type="button"
           className="hidden h-8 items-center gap-1.5 rounded-lg border border-[#E6E8EF] bg-white px-3 text-[12px] text-[#697386] transition hover:bg-[#F7F8FA] md:flex"
@@ -1207,7 +1209,7 @@ function TopBar({
           <span>Sync</span>
         </button>
 
-        <div className="flex rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-0.5">
+        <div className="flex max-w-full overflow-x-auto rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-0.5">
           {rangeOptions.map((option) => {
             const selected = analyticsRange === option.key;
 
@@ -2076,7 +2078,7 @@ function PlaybooksView({
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-[#F7F8FA]">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[#E6E8EF] bg-white px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E8EF] bg-white px-4 py-3 sm:px-5">
           <h2 className="text-[13px] font-semibold text-[#171923]">Playbooks</h2>
           <button
             type="button"
@@ -2116,7 +2118,7 @@ function PlaybooksView({
                     : "none",
                 }}
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setSelectedId(isSelected ? null : playbook.id); }}
@@ -2129,7 +2131,7 @@ function PlaybooksView({
                       {playbook.description}
                     </div>
                   </button>
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1 self-end sm:self-start">
                     <button
                       type="button"
                       onClick={() => {
@@ -2168,8 +2170,8 @@ function PlaybooksView({
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-end justify-between gap-4">
-                  <div className="grid grid-cols-4 gap-8">
+                <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between xl:gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:gap-8">
                     {[
                       {
                         label: "Win Rate",
@@ -2208,7 +2210,7 @@ function PlaybooksView({
                       </div>
                     ))}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 xl:shrink-0">
                     <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-[#16A779]">
                       Best: {formatPlaybookTrade(playbook.bestTrade, playbook.bestTradePnl)}
                     </span>
@@ -2239,8 +2241,8 @@ function PlaybooksView({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
           onClick={(e) => e.target === e.currentTarget && onCancel()}
         >
-          <div className="flex w-full max-w-[540px] flex-col rounded-2xl bg-white shadow-2xl" style={{ maxHeight: "88vh" }}>
-            <div className="flex shrink-0 items-center justify-between border-b border-[#E6E8EF] px-6 py-5">
+          <div className="flex w-full max-w-[540px] flex-col rounded-2xl bg-white shadow-2xl" style={{ maxHeight: "calc(100vh - 32px)" }}>
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#E6E8EF] px-4 py-4 sm:px-6 sm:py-5">
               <div>
                 <p className="text-[20px] font-bold text-[#171923]">
                   {editingPlaybook ? "Edit Playbook" : "New Playbook"}
@@ -2260,14 +2262,14 @@ function PlaybooksView({
             </div>
 
             <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-              <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+              <div className="flex-1 space-y-5 overflow-y-auto px-4 py-5 sm:px-6">
                 {error ? (
                   <p role="alert" className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
                     {error}
                   </p>
                 ) : null}
 
-                <div className="flex items-start gap-4">
+                <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                   <label className="grid min-w-0 flex-1 gap-1.5 text-[13px] font-semibold text-[#171923]">
                     <span>Playbook Name <span className="text-[#E25555]">*</span></span>
                     <input
@@ -2281,7 +2283,7 @@ function PlaybooksView({
                   </label>
                   <div className="grid gap-1.5 text-[13px] font-semibold text-[#171923]">
                     Color
-                    <div className="flex h-10 items-center gap-2">
+                    <div className="flex h-auto flex-wrap items-center gap-2 sm:h-10">
                       {PLAYBOOK_COLORS.map((c) => (
                         <button
                           key={c}
@@ -2361,14 +2363,14 @@ function PlaybooksView({
                 </div>
               </div>
 
-              <div className="flex shrink-0 items-center justify-between border-t border-[#E6E8EF] px-6 py-4">
-                <p className="text-[12px] text-[#697386]">
+              <div className="flex shrink-0 flex-col gap-3 border-t border-[#E6E8EF] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <p className="min-w-0 text-[12px] text-[#697386]">
                   {form.name.trim() && form.description.trim()
                     ? <span className="font-semibold text-[#171923]">{form.name.trim()}</span>
                     : "Fill in name and description to continue"
                   }
                 </p>
-                <div className="flex gap-2">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
                   <button
                     type="button"
                     onClick={onCancel}
@@ -3084,7 +3086,7 @@ function JournalReviewView({
   }
 
   return (
-    <div className="grid min-h-0 gap-4 p-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:p-5">
+    <div className="grid min-h-0 gap-4 p-4 xl:grid-cols-[360px_minmax(0,1fr)] lg:p-5">
       <section className="min-h-0 overflow-hidden rounded-lg border border-[#E6E8EF] bg-white">
         <div className="flex items-center justify-between gap-3 border-b border-[#E6E8EF] px-4 py-3">
           <div>
@@ -3105,7 +3107,7 @@ function JournalReviewView({
           </button>
         </div>
 
-        <div className="max-h-[calc(100vh-190px)] overflow-y-auto p-2">
+        <div className="max-h-[360px] overflow-y-auto p-2 xl:max-h-[calc(100vh-190px)]">
           {journalTrades.map((trade) => {
             const selected = selectedTrade?.id === trade.id;
             const playbook = playbooks.find(
@@ -3283,7 +3285,7 @@ function JournalReviewView({
                 </div>
               )}
 
-              <aside className="grid content-start gap-3">
+              <aside className="grid content-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <div className="rounded-lg border border-[#E6E8EF] bg-[#FBFCFD] p-3">
                   <p className="text-[11px] font-medium text-[#697386]">
                     Playbook
@@ -3382,7 +3384,7 @@ function TradeFormView({
     .slice(0, 5);
 
   return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[380px_minmax(0,1fr)] lg:p-5">
+    <div className="grid gap-4 p-4 xl:grid-cols-[380px_minmax(0,1fr)] lg:p-5">
       <section className="rounded-lg border border-[#E6E8EF] bg-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3417,7 +3419,7 @@ function TradeFormView({
 
         <form className="mt-4 grid gap-3" onSubmit={onSubmit}>
           <div className="grid gap-2">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <label
                 htmlFor="trade-playbook"
                 className="text-sm font-medium text-[#4B5565]"
@@ -3569,7 +3571,7 @@ function TradeFormView({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm font-medium text-[#4B5565]">
               Side
               <select
@@ -4232,7 +4234,7 @@ export default function TradeJournal({
   const meta = viewMeta[activeView];
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] text-[#171923] lg:flex">
+    <div className="min-h-screen overflow-x-hidden bg-[#F7F8FA] text-[#171923] lg:flex">
       <Sidebar
         activeView={activeView}
         userName={displayName}
@@ -4241,7 +4243,7 @@ export default function TradeJournal({
         onNav={setActiveView}
       />
 
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar
           title={meta.title}
           subtitle={meta.subtitle}
