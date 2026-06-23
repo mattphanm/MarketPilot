@@ -222,6 +222,15 @@ export default async function Home() {
       updatedAt: true,
     },
   });
+  const account = await prisma.account.findFirst({
+    where: { userId },
+    orderBy: { provider: "asc" },
+    select: { provider: true, type: true },
+  });
+  const dbUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { emailVerified: true, image: true },
+  });
 
   const serializedTrades = trades.map(serializeTrade);
   const serializedPlaybooks = playbooks.map(serializePlaybook);
@@ -234,6 +243,10 @@ export default async function Home() {
       initialPlaybooks={serializedPlaybooks}
       userName={displayName}
       userEmail={session.user?.email}
+      userImage={session.user?.image ?? dbUser?.image}
+      accountProvider={account?.provider}
+      accountType={account?.type}
+      emailVerifiedIso={dbUser?.emailVerified?.toISOString() ?? null}
       nowIso={new Date().toISOString()}
     />
   );

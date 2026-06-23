@@ -8,11 +8,11 @@ Add the Figma-style Settings tab using real account and workspace data. Do not i
 
 ## Acceptance criteria
 
-- [ ] Settings tab matches the Figma visual direction.
-- [ ] Settings shows real authenticated user account data.
-- [ ] Settings includes sign-out.
-- [ ] Settings does not expose fake or mock preferences.
-- [ ] Visual test: capture a screenshot of Settings tab with authenticated user data.
+- [x] Settings tab matches the Figma visual direction.
+- [x] Settings shows real authenticated user account data.
+- [x] Settings includes sign-out.
+- [x] Settings does not expose fake or mock preferences.
+- [ ] Visual test: capture a screenshot of Settings tab with authenticated user data. Skipped per request.
 
 ## Blocked by
 

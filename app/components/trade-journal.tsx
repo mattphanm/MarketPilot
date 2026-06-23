@@ -14,6 +14,8 @@ import {
   Edit3,
   LayoutDashboard,
   List,
+  LogOut,
+  Mail,
   Plus,
   RefreshCw,
   Search,
@@ -65,6 +67,10 @@ type TradeJournalProps = {
   initialPlaybooks: PlaybookDto[];
   userName?: string | null;
   userEmail?: string | null;
+  userImage?: string | null;
+  accountProvider?: string | null;
+  accountType?: string | null;
+  emailVerifiedIso?: string | null;
   nowIso: string;
 };
 
@@ -2523,32 +2529,94 @@ function PlaybooksView({
 function SettingsView({
   userName,
   userEmail,
+  userImage,
+  accountProvider,
+  accountType,
+  emailVerifiedIso,
   trades,
+  playbooks,
   report,
 }: {
   userName: string;
   userEmail?: string | null;
+  userImage?: string | null;
+  accountProvider?: string | null;
+  accountType?: string | null;
+  emailVerifiedIso?: string | null;
   trades: TradeDto[];
+  playbooks: PlaybookDto[];
   report: AnalyticsReport;
 }) {
   const journaledTrades = trades.filter((trade) => trade.journalEntry).length;
+  const totalRisk = trades.reduce((sum, trade) => sum + trade.riskDollars, 0);
+  const latestTrade = trades[0]?.openedAt
+    ? dateFormatter.format(new Date(trades[0].openedAt))
+    : "No trades yet";
+  const providerLabel = accountProvider
+    ? accountProvider.charAt(0).toUpperCase() + accountProvider.slice(1)
+    : "Not available";
+  const emailStatus = emailVerifiedIso
+    ? `Verified ${dateFormatter.format(new Date(emailVerifiedIso))}`
+    : "Not verified";
 
   return (
-    <div className="space-y-4 p-4 lg:p-5">
-      <div className="grid gap-3 lg:grid-cols-[minmax(280px,0.4fr)_minmax(0,0.6fr)]">
-        <AppCard>
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#6C5DD3] text-[14px] font-bold text-white">
-              {getInitials(userName)}
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-[15px] font-semibold text-[#171923]">
-                {userName}
+    <div className="space-y-3 p-4 lg:p-5">
+      <div className="grid gap-3 xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,0.58fr)]">
+        <AppCard className="overflow-hidden !p-0">
+          <div className="border-b border-[#E6E8EF] bg-[#F7F8FA] px-4 py-3">
+            <SectionTitle>Account</SectionTitle>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              {userImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={userImage}
+                  alt=""
+                  className="h-12 w-12 rounded-full border border-[#E6E8EF] object-cover"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#6C5DD3] text-[15px] font-bold text-white">
+                  {getInitials(userName)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="truncate text-[15px] font-semibold text-[#171923]">
+                  {userName}
+                </div>
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-[#697386]">
+                  <Mail size={12} aria-hidden="true" />
+                  <span className="truncate">
+                    {userEmail ?? "No email available"}
+                  </span>
+                </div>
               </div>
-              <div className="truncate text-[12px] text-[#697386]">
-                {userEmail ?? "No email available"}
-              </div>
             </div>
+
+            <div className="mt-4 space-y-2 text-[12px]">
+              {[
+                ["Sign-in provider", providerLabel],
+                ["Account type", accountType ?? "Not available"],
+                ["Email status", emailStatus],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-3">
+                  <span className="text-[#697386]">{label}</span>
+                  <span className="text-right font-medium text-[#171923]">
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <form action={signOutUser} className="mt-4">
+              <button
+                type="submit"
+                className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[#E6E8EF] bg-white px-3 text-[12px] font-semibold text-[#E25555] transition hover:border-[#F2C2C2] hover:bg-[#FFF8F8] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+              >
+                <LogOut size={14} aria-hidden="true" />
+                Sign out
+              </button>
+            </form>
           </div>
         </AppCard>
 
@@ -2559,9 +2627,7 @@ function SettingsView({
               ["Total Trades", numberFormatter.format(trades.length)],
               ["Completed Trades", numberFormatter.format(report.closedTrades)],
               ["Journal Entries", numberFormatter.format(journaledTrades)],
-              ["Total Risk", formatCompactMoney(
-                trades.reduce((sum, trade) => sum + trade.riskDollars, 0)
-              )],
+              ["Playbooks", numberFormatter.format(playbooks.length)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg bg-[#F7F8FA] p-3">
                 <p className="text-[10px] text-[#697386]">{label}</p>
@@ -2574,33 +2640,24 @@ function SettingsView({
         </AppCard>
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-3">
+      <div className="grid gap-3 xl:grid-cols-2">
         {[
           {
-            title: "Data Integrity",
+            title: "Trading Data",
             rows: [
               ["Symbols tracked", numberFormatter.format(report.symbolsTraded)],
               ["Active days", numberFormatter.format(report.activeDays)],
+              ["Total risk logged", formatCompactMoney(totalRisk)],
+              ["Latest trade", latestTrade],
+            ],
+          },
+          {
+            title: "Performance Snapshot",
+            rows: [
               ["Winning days", numberFormatter.format(report.winningDays)],
               ["Losing days", numberFormatter.format(report.losingDays)],
-            ],
-          },
-          {
-            title: "Review Defaults",
-            rows: [
-              ["Base range", "All trades"],
-              ["Calendar timezone", "UTC"],
-              ["Date input", "24-hour supported"],
-              ["Risk display", "P&L and return"],
-            ],
-          },
-          {
-            title: "Account",
-            rows: [
-              ["Provider", "Google"],
-              ["Workspace", "Futures Journal"],
-              ["Access", "Private"],
-              ["Sync", "Manual refresh"],
+              ["Win rate", formatPercent(report.winRate)],
+              ["Net P&L", formatMoney(report.netPnl)],
             ],
           },
         ].map((section) => (
@@ -3659,6 +3716,10 @@ export default function TradeJournal({
   initialPlaybooks,
   userName,
   userEmail,
+  userImage,
+  accountProvider,
+  accountType,
+  emailVerifiedIso,
   nowIso,
 }: TradeJournalProps) {
   const [trades, setTrades] = useState(() =>
@@ -4303,7 +4364,12 @@ export default function TradeJournal({
             <SettingsView
               userName={displayName}
               userEmail={userEmail}
+              userImage={userImage}
+              accountProvider={accountProvider}
+              accountType={accountType}
+              emailVerifiedIso={emailVerifiedIso}
               trades={trades}
+              playbooks={playbooks}
               report={analyticsReport}
             />
           ) : null}
