@@ -6,7 +6,6 @@ import {
   ArrowUp,
   ArrowUpDown,
   BarChart2,
-  Bell,
   BookMarked,
   BookOpen,
   ChevronDown,
@@ -1182,34 +1181,11 @@ function TopBar({
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="hidden h-8 items-center gap-1.5 rounded-lg border border-[#E6E8EF] bg-white px-3 text-[12px] text-[#697386] transition hover:bg-[#F7F8FA] md:flex"
+        <div
+          className="flex max-w-full overflow-x-auto rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-0.5"
+          aria-label="Entry-time range"
+          role="group"
         >
-          <span>Current range</span>
-          <ChevronDown size={12} aria-hidden="true" />
-        </button>
-
-        <button
-          type="button"
-          className="hidden h-8 items-center gap-1.5 rounded-lg border border-[#E6E8EF] bg-white px-3 text-[12px] text-[#697386] transition hover:bg-[#F7F8FA] md:flex"
-        >
-          <Search size={13} aria-hidden="true" />
-          <span>Search</span>
-          <span className="rounded bg-[#F7F8FA] px-1 py-0.5 text-[10px] text-[#697386]">
-            Cmd K
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className="hidden h-8 items-center gap-1.5 rounded-lg border border-[#E6E8EF] bg-white px-3 text-[12px] text-[#697386] transition hover:bg-[#F7F8FA] md:flex"
-        >
-          <RefreshCw size={13} aria-hidden="true" />
-          <span>Sync</span>
-        </button>
-
-        <div className="flex max-w-full overflow-x-auto rounded-lg border border-[#E6E8EF] bg-[#F7F8FA] p-0.5">
           {rangeOptions.map((option) => {
             const selected = analyticsRange === option.key;
 
@@ -1218,12 +1194,13 @@ function TopBar({
                 key={option.key}
                 type="button"
                 onClick={() => onRangeChange(option.key)}
-                className={`h-7 min-w-10 rounded-md px-2 text-[11px] font-semibold transition ${
+                className={`h-7 min-w-10 rounded-md px-2 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#6C5DD3] focus:ring-offset-1 ${
                   selected
-                    ? "bg-white text-[#6C5DD3] shadow-sm"
+                    ? "bg-white text-[#6C5DD3] shadow-sm ring-1 ring-[#D8D4F3]"
                     : "text-[#697386] hover:text-[#171923]"
                 }`}
                 aria-pressed={selected}
+                aria-label={`${option.label} entry-time range${selected ? ", selected" : ""}`}
               >
                 {option.label}
               </button>
@@ -1239,15 +1216,6 @@ function TopBar({
             Sign out
           </button>
         </form>
-
-        <button
-          type="button"
-          className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-[#E6E8EF] bg-white transition hover:bg-[#F7F8FA]"
-          aria-label="Notifications"
-        >
-          <Bell size={14} color="#697386" aria-hidden="true" />
-          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#6C5DD3]" />
-        </button>
 
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#6C5DD3] text-[11px] font-bold text-white">
           {getInitials(userName)}
