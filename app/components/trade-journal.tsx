@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useMemo, useRef, useEffect, useState, type FormEvent } from "react";
 import {
   ArrowDown,
@@ -64,6 +65,7 @@ import type { TradeDto, TradePayload, TradeSide } from "@/lib/trades/types";
 type TradeJournalProps = {
   initialTrades: TradeDto[];
   initialPlaybooks: PlaybookDto[];
+  initialView?: DashboardView;
   userName?: string | null;
   userEmail?: string | null;
   userImage?: string | null;
@@ -73,7 +75,7 @@ type TradeJournalProps = {
   nowIso: string;
 };
 
-type DashboardView =
+export type DashboardView =
   | "dashboard"
   | "trades"
   | "journal"
@@ -1377,7 +1379,7 @@ function DashboardOverview({
   score: ReturnType<typeof buildScoreMetrics>;
   onNav: (view: DashboardView) => void;
 }) {
-  const recentTrades = trades.slice(0, 8);
+  const recentTrades = trades.slice(0, 4);
   const chartData = buildChartPoints(report);
   const dailyChartData = chartData.slice(-30);
   const completedTrades = report.closedTrades;
@@ -3684,6 +3686,7 @@ function TradeFormView({
 export default function TradeJournal({
   initialTrades,
   initialPlaybooks,
+  initialView = "dashboard",
   userName,
   userEmail,
   userImage,
@@ -3692,13 +3695,14 @@ export default function TradeJournal({
   emailVerifiedIso,
   nowIso,
 }: TradeJournalProps) {
+  const router = useRouter();
   const [trades, setTrades] = useState(() =>
     sortTrades(initialTrades.map(normalizeTrade))
   );
   const [playbooks, setPlaybooks] = useState(() =>
     sortPlaybooks(initialPlaybooks.map(normalizePlaybook))
   );
-  const [activeView, setActiveView] = useState<DashboardView>("dashboard");
+  const [activeView, setActiveView] = useState<DashboardView>(initialView);
   const [analyticsRange, setAnalyticsRange] =
     useState<AnalyticsRangeKey>("all");
   const [analyticsStart, setAnalyticsStart] = useState("");
@@ -3791,6 +3795,22 @@ export default function TradeJournal({
     });
   }, [resultFilter, sideFilter, tradeSearch, tradeSort, trades]);
 
+  function navigateToView(view: DashboardView) {
+    setActiveView(view);
+
+    const params = new URLSearchParams(window.location.search);
+
+    if (view === "dashboard") {
+      params.delete("view");
+    } else {
+      params.set("view", view);
+    }
+
+    const query = params.toString();
+    const pathname = window.location.pathname;
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
   function updateTradeSort(key: TradeSortKey) {
     setTradeSort((current) => ({
       key,
@@ -3856,7 +3876,7 @@ export default function TradeJournal({
   function openNewTrade() {
     resetForm();
     setTradeFormOpen(true);
-    setActiveView("journal");
+    navigateToView("journal");
   }
 
   function startEdit(trade: TradeDto) {
@@ -3864,7 +3884,7 @@ export default function TradeJournal({
     setTradeFormOpen(true);
     setForm(tradeToForm(trade));
     setError(null);
-    setActiveView("journal");
+    navigateToView("journal");
   }
 
   function startJournalEdit(trade: TradeDto) {
@@ -3900,13 +3920,13 @@ export default function TradeJournal({
   function openTradeForPlaybook(playbookId: string) {
     resetForm();
     setForm((prev) => ({ ...prev, playbookId }));
-    setActiveView("journal");
+    navigateToView("journal");
   }
 
   function openNewPlaybook() {
     resetPlaybookForm();
     setShowPlaybookModal(true);
-    setActiveView("playbooks");
+    navigateToView("playbooks");
   }
 
   function startEditPlaybook(playbook: PlaybookDto) {
@@ -3914,7 +3934,7 @@ export default function TradeJournal({
     setPlaybookForm(playbookToForm(playbook));
     setPlaybookError(null);
     setShowPlaybookModal(true);
-    setActiveView("playbooks");
+    navigateToView("playbooks");
   }
 
   async function handlePlaybookSubmit(event: FormEvent<HTMLFormElement>) {
@@ -4090,7 +4110,7 @@ export default function TradeJournal({
       );
       setSelectedTradeId(nextTrade.id);
       resetForm();
-      setActiveView("trades");
+      navigateToView("trades");
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -4208,7 +4228,7 @@ export default function TradeJournal({
         userName={displayName}
         userEmail={userEmail}
         onAddTrade={openNewTrade}
-        onNav={setActiveView}
+        onNav={navigateToView}
       />
 
       <main className="flex min-h-screen min-w-0 flex-1 flex-col overflow-hidden">
@@ -4219,7 +4239,7 @@ export default function TradeJournal({
           analyticsRange={analyticsRange}
           onRangeChange={updateAnalyticsRange}
         />
-        <MobileNav activeView={activeView} onNav={setActiveView} />
+        <MobileNav activeView={activeView} onNav={navigateToView} />
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {activeView === "dashboard" ? (
@@ -4227,7 +4247,7 @@ export default function TradeJournal({
               trades={trades}
               report={analyticsReport}
               score={score}
-              onNav={setActiveView}
+              onNav={navigateToView}
             />
           ) : null}
 

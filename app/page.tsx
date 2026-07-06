@@ -1,10 +1,14 @@
 import { signInWithGoogle } from "@/app/actions/auth";
-import TradeJournal from "@/app/components/trade-journal";
+import TradeJournal, { type DashboardView } from "@/app/components/trade-journal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { BarChart2, BookOpen, Target, TrendingUp } from "lucide-react";
 import type { PlaybookDto } from "@/lib/playbooks/types";
 import type { TradeDto } from "@/lib/trades/types";
+
+type HomeProps = {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+};
 
 function serializeTrade(trade: {
   id: string;
@@ -73,6 +77,28 @@ const features = [
   { icon: BookOpen, label: "Structured Journaling", desc: "Thesis, risk plan, catalyst, and post-trade review" },
   { icon: Target, label: "Playbook System", desc: "Define, track, and improve repeatable setups" },
 ] as const;
+
+const dashboardViews = [
+  "dashboard",
+  "trades",
+  "journal",
+  "playbooks",
+  "analytics",
+  "settings",
+] as const satisfies readonly DashboardView[];
+
+function parseDashboardView(
+  value: string | string[] | undefined
+): DashboardView {
+  if (
+    typeof value === "string" &&
+    dashboardViews.includes(value as DashboardView)
+  ) {
+    return value as DashboardView;
+  }
+
+  return "dashboard";
+}
 
 function SignInScreen() {
   return (
@@ -185,9 +211,11 @@ function SignInScreen() {
   );
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }: HomeProps) {
   const session = await auth();
   const userId = session?.user?.id;
+  const resolvedSearchParams = await searchParams;
+  const initialView = parseDashboardView(resolvedSearchParams?.view);
 
   if (!userId) {
     return <SignInScreen />;
@@ -241,6 +269,7 @@ export default async function Home() {
     <TradeJournal
       initialTrades={serializedTrades}
       initialPlaybooks={serializedPlaybooks}
+      initialView={initialView}
       userName={displayName}
       userEmail={session.user?.email}
       userImage={session.user?.image ?? dbUser?.image}
