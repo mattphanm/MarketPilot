@@ -1050,76 +1050,82 @@ function Sidebar({
   onNav: (view: DashboardView) => void;
 }) {
   return (
-    <aside className="hidden h-screen w-[220px] shrink-0 flex-col border-r border-white/10 bg-[#1E1B2E] lg:flex">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#6C5DD3]">
-          <TrendingUp size={15} color="#fff" aria-hidden="true" />
+    <aside className="hidden h-dvh w-[220px] shrink-0 overflow-y-auto border-r border-white/10 bg-[#1E1B2E] lg:block">
+      <div className="flex min-h-full flex-col">
+        <div className="flex items-center gap-2.5 px-5 py-5">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#6C5DD3]">
+            <TrendingUp size={15} color="#fff" aria-hidden="true" />
+          </div>
+          <span className="text-[15px] font-bold tracking-normal text-white">
+            MarketPilot
+          </span>
         </div>
-        <span className="text-[15px] font-bold tracking-normal text-white">
-          MarketPilot
-        </span>
-      </div>
 
-      <div className="mx-3 mb-4 rounded-lg bg-white/5 px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[10px] font-bold text-white">
-              {getInitials(userName).slice(0, 1)}
+        <div className="mx-3 mb-4 rounded-lg bg-white/5 px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[10px] font-bold text-white">
+                {getInitials(userName).slice(0, 1)}
+              </div>
+              <p className="truncate text-[12px] font-medium text-white">
+                Futures Journal
+              </p>
             </div>
-            <p className="truncate text-[12px] font-medium text-white">
-              Futures Journal
-            </p>
+            <ChevronDown size={13} color="#A8A5C1" aria-hidden="true" />
           </div>
-          <ChevronDown size={13} color="#A8A5C1" aria-hidden="true" />
         </div>
-      </div>
 
-      <div className="px-3 pb-5">
-        <button
-          type="button"
-          onClick={onAddTrade}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#6C5DD3] px-3 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7] focus:outline-none focus:ring-2 focus:ring-white/60"
-        >
-          <Plus size={13} aria-hidden="true" />
-          Add Trade
-        </button>
-      </div>
+        <div className="px-3 pb-5">
+          <button
+            type="button"
+            onClick={onAddTrade}
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#6C5DD3] px-3 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7] focus:outline-none focus:ring-2 focus:ring-white/60"
+          >
+            <Plus size={13} aria-hidden="true" />
+            Add Trade
+          </button>
+        </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2">
-        {navItems.map((item) => {
-          const selected = item.id === activeView;
-          const Icon = item.icon;
+        <nav className="space-y-0.5 px-2 pb-3">
+          {navItems.map((item) => {
+            const selected = item.id === activeView;
+            const Icon = item.icon;
 
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onNav(item.id)}
-              className={`flex h-9 w-full items-center gap-2.5 rounded-lg border-l-2 px-3 text-left text-[13px] transition ${
-                selected
-                  ? "border-[#6C5DD3] bg-[#6C5DD3]/20 font-medium text-white"
-                  : "border-transparent text-[#A8A5C1] hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              <Icon
-                size={15}
-                color={selected ? "#6C5DD3" : "#A8A5C1"}
-                aria-hidden="true"
-              />
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onNav(item.id)}
+                className={`flex h-9 w-full items-center gap-2.5 rounded-lg border-l-2 px-3 text-left text-[13px] transition ${
+                  selected
+                    ? "border-[#6C5DD3] bg-[#6C5DD3]/20 font-medium text-white"
+                    : "border-transparent text-[#A8A5C1] hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                <Icon
+                  size={15}
+                  color={selected ? "#6C5DD3" : "#A8A5C1"}
+                  aria-hidden="true"
+                />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
 
-      <div className="p-3">
-        <div className="flex items-center gap-2.5 rounded-lg bg-white/5 px-3 py-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[11px] font-bold text-white">
-            {getInitials(userName)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[12px] font-medium text-white">{userName}</p>
-            <p className="truncate text-[11px] text-[#A8A5C1]">{userEmail}</p>
+        <div className="mt-auto p-3">
+          <div className="flex items-center gap-2.5 rounded-lg bg-white/5 px-3 py-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[11px] font-bold text-white">
+              {getInitials(userName)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-medium text-white">
+                {userName}
+              </p>
+              <p className="truncate text-[11px] text-[#A8A5C1]">
+                {userEmail}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -1135,7 +1141,7 @@ function MobileNav({
   onNav: (view: DashboardView) => void;
 }) {
   return (
-    <nav className="flex gap-2 overflow-x-auto border-b border-[#E6E8EF] bg-white px-4 py-2 lg:hidden">
+    <nav className="flex shrink-0 gap-2 overflow-x-auto border-b border-[#E6E8EF] bg-white px-4 py-2 lg:hidden">
       {navItems.map((item) => {
         const selected = activeView === item.id;
         const Icon = item.icon;
@@ -4222,7 +4228,7 @@ export default function TradeJournal({
   const meta = viewMeta[activeView];
 
   return (
-    <div className="h-screen overflow-hidden bg-[#F7F8FA] text-[#171923] lg:flex">
+    <div className="h-dvh overflow-hidden bg-[#F7F8FA] text-[#171923] lg:flex">
       <Sidebar
         activeView={activeView}
         userName={displayName}
@@ -4231,7 +4237,7 @@ export default function TradeJournal({
         onNav={navigateToView}
       />
 
-      <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar
           title={meta.title}
           subtitle={meta.subtitle}
