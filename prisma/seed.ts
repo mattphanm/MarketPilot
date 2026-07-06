@@ -3,7 +3,6 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  // Find or create a dev user to own the seed data
   const seedEmail = process.env.SEED_USER_EMAIL ?? "dev@marketpilot.test";
   let user = await prisma.user.findFirst({ where: { email: seedEmail } });
   if (!user) {
@@ -15,32 +14,149 @@ async function main() {
     });
   }
 
-  // Create a playbook
   const playbook = await prisma.playbook.upsert({
     where: { id: "seed-playbook-001" },
-    update: {},
+    update: {
+      name: "Momentum Breakout",
+      description: "High-momentum breakout setups with tight stops",
+      color: "#6C5DD3",
+      rules: [
+        "Entry on breakout candle close",
+        "Stop below prior pivot",
+        "Target 2R minimum",
+      ],
+    },
     create: {
       id: "seed-playbook-001",
       userId: user.id,
       name: "Momentum Breakout",
       description: "High-momentum breakout setups with tight stops",
       color: "#6C5DD3",
-      rules: ["Entry on breakout candle close", "Stop below prior pivot", "Target 2R minimum"],
+      rules: [
+        "Entry on breakout candle close",
+        "Stop below prior pivot",
+        "Target 2R minimum",
+      ],
     },
   });
 
-  // Seed trades: mix of wins, losses, and breakeven
+  await prisma.trade.deleteMany({
+    where: {
+      userId: user.id,
+      playbookId: playbook.id,
+    },
+  });
+
+  // Spread trades across range boundaries so Dashboard/Recharts changes are visible.
   const trades = [
-    { symbol: "ES", side: "long",  riskDollars: 200, rMultiple:  2.5, daysAgo: 1,  idea: "FOMC breakout above 5220 resistance" },
-    { symbol: "NQ", side: "short", riskDollars: 150, rMultiple: -1.0, daysAgo: 2,  idea: "Failed breakout at ATH, reversal short" },
-    { symbol: "MES", side: "long", riskDollars: 50,  rMultiple:  0.0, daysAgo: 3,  idea: "Morning gap fill — stopped at breakeven" },
-    { symbol: "CL",  side: "long", riskDollars: 300, rMultiple:  1.8, daysAgo: 4,  idea: "Inventory draw surprise catalyst" },
-    { symbol: "GC",  side: "short",riskDollars: 100, rMultiple: -0.5, daysAgo: 5,  idea: "DXY strength, gold rejected at 2350" },
-    { symbol: "ES",  side: "long", riskDollars: 250, rMultiple:  3.1, daysAgo: 6,  idea: "Bullish engulfing on 1h chart at VWAP" },
-    { symbol: "NQ",  side: "long", riskDollars: 175, rMultiple: -1.0, daysAgo: 7,  idea: "Tech earnings gap continuation" },
-    { symbol: "RTY", side: "short",riskDollars: 125, rMultiple:  1.2, daysAgo: 8,  idea: "Small-cap index failed breakout short" },
-    { symbol: "MNQ", side: "long", riskDollars: 75,  rMultiple:  0.0, daysAgo: 9,  idea: "Scalp — scratched near entry" },
-    { symbol: "ES",  side: "short",riskDollars: 200, rMultiple: -1.0, daysAgo: 10, idea: "Distribution top, reversal short" },
+    {
+      id: "seed-trade-001",
+      symbol: "ES",
+      side: "long",
+      riskDollars: 200,
+      rMultiple: 2.5,
+      daysAgo: 1,
+      idea: "FOMC breakout above resistance",
+    },
+    {
+      id: "seed-trade-002",
+      symbol: "NQ",
+      side: "short",
+      riskDollars: 150,
+      rMultiple: -1.0,
+      daysAgo: 8,
+      idea: "Failed breakout at high of day",
+    },
+    {
+      id: "seed-trade-003",
+      symbol: "MES",
+      side: "long",
+      riskDollars: 50,
+      rMultiple: 0.0,
+      daysAgo: 17,
+      idea: "Morning gap fill scratched near entry",
+    },
+    {
+      id: "seed-trade-004",
+      symbol: "CL",
+      side: "long",
+      riskDollars: 300,
+      rMultiple: 1.8,
+      daysAgo: 28,
+      idea: "Inventory draw continuation",
+    },
+    {
+      id: "seed-trade-005",
+      symbol: "GC",
+      side: "short",
+      riskDollars: 100,
+      rMultiple: -0.5,
+      daysAgo: 31,
+      idea: "Gold rejected resistance after dollar strength",
+    },
+    {
+      id: "seed-trade-006",
+      symbol: "ES",
+      side: "long",
+      riskDollars: 250,
+      rMultiple: 3.1,
+      daysAgo: 45,
+      idea: "Bullish engulfing at VWAP",
+    },
+    {
+      id: "seed-trade-007",
+      symbol: "NQ",
+      side: "long",
+      riskDollars: 175,
+      rMultiple: -1.0,
+      daysAgo: 62,
+      idea: "Tech earnings continuation failed",
+    },
+    {
+      id: "seed-trade-008",
+      symbol: "RTY",
+      side: "short",
+      riskDollars: 125,
+      rMultiple: 1.2,
+      daysAgo: 88,
+      idea: "Small-cap failed breakout short",
+    },
+    {
+      id: "seed-trade-009",
+      symbol: "MNQ",
+      side: "long",
+      riskDollars: 75,
+      rMultiple: 0.5,
+      daysAgo: 120,
+      idea: "Spring pullback continuation",
+    },
+    {
+      id: "seed-trade-010",
+      symbol: "ES",
+      side: "short",
+      riskDollars: 200,
+      rMultiple: -1.0,
+      daysAgo: 165,
+      idea: "Distribution top reversal short",
+    },
+    {
+      id: "seed-trade-011",
+      symbol: "MGC",
+      side: "long",
+      riskDollars: 80,
+      rMultiple: 2.0,
+      daysAgo: 220,
+      idea: "Prior-year gold breakout retest",
+    },
+    {
+      id: "seed-trade-012",
+      symbol: "MCL",
+      side: "short",
+      riskDollars: 120,
+      rMultiple: -0.75,
+      daysAgo: 370,
+      idea: "Prior-year crude trend exhaustion",
+    },
   ];
 
   for (const t of trades) {
@@ -50,6 +166,7 @@ async function main() {
 
     const trade = await prisma.trade.create({
       data: {
+        id: t.id,
         userId: user.id,
         playbookId: playbook.id,
         symbol: t.symbol,

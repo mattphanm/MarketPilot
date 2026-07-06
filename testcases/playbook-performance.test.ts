@@ -3,6 +3,7 @@ import {
   buildPlaybookPerformance,
   type PlaybookPerformanceTrade,
 } from "../lib/playbooks/performance";
+import { filterAnalyticsTradesByEntryTime } from "../lib/analytics/report";
 import type { PlaybookDto } from "../lib/playbooks/types";
 
 const baseDate = "2026-06-01T14:00:00.000Z";
@@ -109,5 +110,63 @@ describe("playbook performance", () => {
     expect(performance.trades.map((trade) => trade.id)).toEqual(["owned"]);
     expect(performance.totalTrades).toBe(1);
     expect(performance.averagePnl).toBe(100);
+  });
+
+  it("derives performance from entry-time filtered trades while preserving playbook definitions", () => {
+    const playbooks = [
+      createPlaybook(),
+      createPlaybook({
+        id: "reversal",
+        name: "Failed Break Reversal",
+        description: "Fade failed continuation.",
+      }),
+    ];
+    const filteredTrades = filterAnalyticsTradesByEntryTime(
+      [
+        createTrade({
+          id: "outside-win",
+          riskDollars: 100,
+          rMultiple: 3,
+          openedAt: "2026-05-31T14:00:00.000Z",
+        }),
+        createTrade({
+          id: "inside-loss",
+          riskDollars: 50,
+          rMultiple: -1,
+          openedAt: "2026-06-04T14:00:00.000Z",
+        }),
+      ],
+      {
+        start: new Date("2026-06-01T00:00:00.000Z"),
+        end: new Date("2026-06-10T00:00:00.000Z"),
+      }
+    );
+
+    const performance = buildPlaybookPerformance(playbooks, filteredTrades);
+
+    expect(performance).toMatchObject([
+      {
+        playbook: { id: "breakout", name: "Opening Range Breakout" },
+        totalTrades: 1,
+        winRate: 0,
+        averagePnl: -50,
+        averageRMultiple: -1,
+        bestTrade: { id: "inside-loss" },
+        bestTradePnl: -50,
+        worstTrade: { id: "inside-loss" },
+        worstTradePnl: -50,
+      },
+      {
+        playbook: { id: "reversal", name: "Failed Break Reversal" },
+        totalTrades: 0,
+        winRate: null,
+        averagePnl: null,
+        averageRMultiple: null,
+        bestTrade: null,
+        bestTradePnl: null,
+        worstTrade: null,
+        worstTradePnl: null,
+      },
+    ]);
   });
 });

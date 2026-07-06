@@ -122,6 +122,22 @@ describe("Trade Log query helpers", () => {
     ).toEqual(["2"]);
   });
 
+  it("ignores entry-time range fields so Trade Log rows are not analytics-filtered", () => {
+    const queryWithAnalyticsRange = {
+      ...query(),
+      range: "30d",
+      start: new Date("2026-06-19T00:00:00.000Z"),
+      end: new Date("2026-06-19T23:59:59.999Z"),
+      now: new Date("2026-06-20T00:00:00.000Z"),
+    };
+
+    expect(
+      filterAndSortTradeLogRows(trades, queryWithAnalyticsRange).map(
+        (row) => row.id
+      )
+    ).toEqual(["2", "1", "3"]);
+  });
+
   it("sorts stable visible values in both directions", () => {
     expect(
       sortTradeLogRows(trades, { key: "pnl", direction: "asc" }).map(

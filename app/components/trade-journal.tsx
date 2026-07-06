@@ -4257,7 +4257,7 @@ export default function TradeJournal({
           {activeView === "playbooks" ? (
             <PlaybooksView
               storedPlaybooks={playbooks}
-              trades={trades}
+              trades={analyticsTrades}
               form={playbookForm}
               editingPlaybook={editingPlaybook}
               saving={playbookSaving}

@@ -61,6 +61,10 @@ _Avoid_: Contracts, quantity, shares, lots
 The user-entered date and time when the completed trade was entered in the market.
 _Avoid_: Log date, created date
 
+**Entry-Time Range**:
+A selected time window for filtering completed trades by Entry Time, using presets such as all time, trailing 30 days, trailing 90 days, or year to date.
+_Avoid_: Current range, created-date range, live-position range
+
 **Futures Symbol**:
 The futures instrument symbol for a completed trade. The UI suggests known futures symbols while the user types, but the trade stores the entered symbol as normalized text.
 _Avoid_: Stock ticker, asset type
