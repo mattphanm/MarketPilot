@@ -3706,6 +3706,7 @@ export default function TradeJournal({
     sortTrades(initialTrades.map(normalizeTrade))
   );
   const shellScrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldResetShellScrollRef = useRef(false);
   const [playbooks, setPlaybooks] = useState(() =>
     sortPlaybooks(initialPlaybooks.map(normalizePlaybook))
   );
@@ -3802,7 +3803,7 @@ export default function TradeJournal({
     });
   }, [resultFilter, sideFilter, tradeSearch, tradeSort, trades]);
 
-  useEffect(() => {
+  function resetShellScroll() {
     const shellScrollContainer = shellScrollRef.current;
 
     if (!shellScrollContainer) {
@@ -3811,9 +3812,26 @@ export default function TradeJournal({
 
     shellScrollContainer.scrollTop = 0;
     shellScrollContainer.scrollLeft = 0;
+  }
+
+  useEffect(() => {
+    if (!shouldResetShellScrollRef.current) {
+      return;
+    }
+
+    shouldResetShellScrollRef.current = false;
+    resetShellScroll();
   }, [activeView]);
 
-  function navigateToView(view: DashboardView) {
+  function navigateToView(view: DashboardView, resetScroll = true) {
+    if (resetScroll) {
+      if (view === activeView) {
+        resetShellScroll();
+      } else {
+        shouldResetShellScrollRef.current = true;
+      }
+    }
+
     setActiveView(view);
 
     const params = new URLSearchParams(window.location.search);
@@ -3894,7 +3912,7 @@ export default function TradeJournal({
   function openNewTrade() {
     resetForm();
     setTradeFormOpen(true);
-    navigateToView("journal");
+    navigateToView("journal", false);
   }
 
   function startEdit(trade: TradeDto) {
@@ -3902,7 +3920,7 @@ export default function TradeJournal({
     setTradeFormOpen(true);
     setForm(tradeToForm(trade));
     setError(null);
-    navigateToView("journal");
+    navigateToView("journal", false);
   }
 
   function startJournalEdit(trade: TradeDto) {
@@ -3938,13 +3956,13 @@ export default function TradeJournal({
   function openTradeForPlaybook(playbookId: string) {
     resetForm();
     setForm((prev) => ({ ...prev, playbookId }));
-    navigateToView("journal");
+    navigateToView("journal", false);
   }
 
   function openNewPlaybook() {
     resetPlaybookForm();
     setShowPlaybookModal(true);
-    navigateToView("playbooks");
+    navigateToView("playbooks", false);
   }
 
   function startEditPlaybook(playbook: PlaybookDto) {
@@ -3952,7 +3970,7 @@ export default function TradeJournal({
     setPlaybookForm(playbookToForm(playbook));
     setPlaybookError(null);
     setShowPlaybookModal(true);
-    navigateToView("playbooks");
+    navigateToView("playbooks", false);
   }
 
   async function handlePlaybookSubmit(event: FormEvent<HTMLFormElement>) {
