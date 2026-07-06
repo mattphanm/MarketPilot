@@ -1050,7 +1050,7 @@ function Sidebar({
   onNav: (view: DashboardView) => void;
 }) {
   return (
-    <aside className="hidden min-h-screen w-[220px] shrink-0 flex-col border-r border-white/10 bg-[#1E1B2E] lg:flex">
+    <aside className="hidden h-screen w-[220px] shrink-0 flex-col border-r border-white/10 bg-[#1E1B2E] lg:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#6C5DD3]">
           <TrendingUp size={15} color="#fff" aria-hidden="true" />
@@ -4222,7 +4222,7 @@ export default function TradeJournal({
   const meta = viewMeta[activeView];
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#F7F8FA] text-[#171923] lg:flex">
+    <div className="h-screen overflow-hidden bg-[#F7F8FA] text-[#171923] lg:flex">
       <Sidebar
         activeView={activeView}
         userName={displayName}
@@ -4231,7 +4231,7 @@ export default function TradeJournal({
         onNav={navigateToView}
       />
 
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar
           title={meta.title}
           subtitle={meta.subtitle}
@@ -4241,7 +4241,10 @@ export default function TradeJournal({
         />
         <MobileNav activeView={activeView} onNav={navigateToView} />
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          data-testid="authenticated-shell-scroll-container"
+        >
           {activeView === "dashboard" ? (
             <DashboardOverview
               trades={trades}
