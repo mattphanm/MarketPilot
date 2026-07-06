@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useEffect, useState, type FormEvent } from "react";
+import {
+  useMemo,
+  useRef,
+  useEffect,
+  useState,
+  type FocusEvent,
+  type FormEvent,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -3814,6 +3821,24 @@ export default function TradeJournal({
     shellScrollContainer.scrollLeft = 0;
   }
 
+  function revealFocusedShellControl(event: FocusEvent<HTMLDivElement>) {
+    const shellScrollContainer = shellScrollRef.current;
+    const focusedElement = event.target;
+
+    if (!shellScrollContainer || !(focusedElement instanceof HTMLElement)) {
+      return;
+    }
+
+    if (!shellScrollContainer.contains(focusedElement)) {
+      return;
+    }
+
+    focusedElement.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }
+
   useEffect(() => {
     if (!shouldResetShellScrollRef.current) {
       return;
@@ -4281,6 +4306,7 @@ export default function TradeJournal({
           ref={shellScrollRef}
           className="min-h-0 flex-1 overflow-y-auto"
           data-testid="authenticated-shell-scroll-container"
+          onFocusCapture={revealFocusedShellControl}
         >
           {activeView === "dashboard" ? (
             <DashboardOverview

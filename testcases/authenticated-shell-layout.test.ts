@@ -44,6 +44,17 @@ describe("authenticated shell responsive layout", () => {
     expect(source).not.toContain("document.documentElement.scrollTop");
   });
 
+  it("reveals focused controls inside the authenticated shell without creating a focus trap", () => {
+    expect(source).toContain("function revealFocusedShellControl");
+    expect(source).toContain("onFocusCapture={revealFocusedShellControl}");
+    expect(source).toContain("focusedElement.scrollIntoView({");
+    expect(source).toContain('block: "nearest"');
+    expect(source).toContain('inline: "nearest"');
+    expect(source).not.toContain("tabIndex={0}");
+    expect(source).not.toContain("trapFocus");
+    expect(source).not.toContain("focusTrap");
+  });
+
   it("syncs URL-driven top-level view changes through the authenticated shell", () => {
     expect(pageSource).toContain("const initialView = parseDashboardView(resolvedSearchParams?.view)");
     expect(pageSource).toContain("key={initialView}");
