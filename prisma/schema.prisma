@@ -21,8 +21,20 @@ model User {
   accounts      Account[]
   journalEntries JournalEntry[]
   playbooks     Playbook[]
+  profile       Profile?
   sessions      Session[]
   trades        Trade[]
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  displayName String
+  username    String   @unique
+  bio         String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Account {

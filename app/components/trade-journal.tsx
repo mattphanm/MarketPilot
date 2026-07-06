@@ -59,6 +59,7 @@ import {
 } from "@/lib/analytics/report";
 import { buildPlaybookPerformance } from "@/lib/playbooks/performance";
 import type { PlaybookDto, PlaybookPayload } from "@/lib/playbooks/types";
+import type { InitialProfile, ProfileDto } from "@/lib/profile/types";
 import {
   filterAndSortTradeLogRows,
   getTradeStatusLabel,
@@ -79,6 +80,10 @@ type TradeJournalProps = {
   accountProvider?: string | null;
   accountType?: string | null;
   emailVerifiedIso?: string | null;
+  initialProfile: InitialProfile;
+  initialProfileComplete: boolean;
+  suggestedDisplayName: string;
+  suggestedUsername: string;
   nowIso: string;
 };
 
@@ -113,6 +118,11 @@ type PlaybookFormState = {
   rules: string[];
 };
 
+type ProfileFormState = {
+  displayName: string;
+  username: string;
+};
+
 type ApiIssue = {
   path?: Array<string | number>;
   message?: string;
@@ -121,6 +131,7 @@ type ApiIssue = {
 type ApiTradeBody = {
   trade?: TradeDto;
   playbook?: PlaybookDto;
+  profile?: ProfileDto;
   error?: string;
   issues?: ApiIssue[];
 };
@@ -663,6 +674,42 @@ function buildPlaybookPayload(
   };
 }
 
+function buildProfilePayload(
+  form: ProfileFormState,
+  currentBio: string
+): { payload: ProfileDto; error: null } | { payload: null; error: string } {
+  const displayName = form.displayName.trim();
+  const username = form.username.trim().toLowerCase();
+
+  if (!displayName) {
+    return { payload: null, error: "Display name is required." };
+  }
+
+  if (!username) {
+    return { payload: null, error: "Username is required." };
+  }
+
+  if (username.length < 3) {
+    return { payload: null, error: "Username must be at least 3 characters." };
+  }
+
+  if (!/^[a-z0-9_]+$/.test(username)) {
+    return {
+      payload: null,
+      error: "Username can only use letters, numbers, and underscores.",
+    };
+  }
+
+  return {
+    payload: {
+      displayName,
+      username,
+      bio: currentBio,
+    },
+    error: null,
+  };
+}
+
 function MetricCard({
   label,
   value,
@@ -1015,6 +1062,92 @@ function DeleteTradeDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProfileOnboardingDialog({
+  form,
+  saving,
+  error,
+  onUpdateForm,
+  onSubmit,
+}: {
+  form: ProfileFormState;
+  saving: boolean;
+  error: string | null;
+  onUpdateForm: <Key extends keyof ProfileFormState>(
+    key: Key,
+    value: ProfileFormState[Key]
+  ) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profile-onboarding-title"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-3 sm:p-4"
+    >
+      <form
+        onSubmit={onSubmit}
+        className="max-h-[calc(100vh-24px)] w-full max-w-[460px] overflow-y-auto rounded-lg bg-white shadow-2xl sm:max-h-[calc(100vh-32px)]"
+      >
+        <div className="border-b border-[#E6E8EF] px-5 py-4">
+          <p
+            id="profile-onboarding-title"
+            className="text-[17px] font-bold text-[#171923]"
+          >
+            Complete your profile
+          </p>
+          <p className="mt-1 text-[13px] leading-5 text-[#697386]">
+            Add the required trader identity fields before using MarketPilot.
+          </p>
+        </div>
+
+        <div className="space-y-3 px-5 py-4">
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-[#697386]">
+              Display name
+            </span>
+            <input
+              value={form.displayName}
+              onChange={(event) =>
+                onUpdateForm("displayName", event.target.value)
+              }
+              autoFocus
+              className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-[#697386]">
+              Username
+            </span>
+            <input
+              value={form.username}
+              onChange={(event) => onUpdateForm("username", event.target.value)}
+              className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+            />
+          </label>
+
+          {error ? (
+            <div className="rounded-md border border-[#F2C2C2] bg-[#FFF8F8] px-3 py-2 text-[12px] text-[#C83F3F]">
+              {error}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex justify-end border-t border-[#E6E8EF] px-5 py-4">
+          <button
+            type="submit"
+            disabled={saving}
+            className="h-9 rounded-md bg-[#6C5DD3] px-4 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "Saving" : "Save Profile"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -3706,6 +3839,10 @@ export default function TradeJournal({
   accountProvider,
   accountType,
   emailVerifiedIso,
+  initialProfile,
+  initialProfileComplete,
+  suggestedDisplayName,
+  suggestedUsername,
   nowIso,
 }: TradeJournalProps) {
   const router = useRouter();
@@ -3759,8 +3896,19 @@ export default function TradeJournal({
   const [inlinePlaybookError, setInlinePlaybookError] = useState<string | null>(
     null
   );
+  const [profile, setProfile] = useState<InitialProfile>(initialProfile);
+  const [profileComplete, setProfileComplete] = useState(
+    initialProfileComplete
+  );
+  const [profileForm, setProfileForm] = useState<ProfileFormState>(() => ({
+    displayName: initialProfile?.displayName ?? suggestedDisplayName,
+    username: initialProfile?.username ?? suggestedUsername,
+  }));
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
-  const displayName = userName || userEmail || "Authenticated trader";
+  const displayName =
+    profile?.displayName || userName || userEmail || "Authenticated trader";
 
   const editingTrade = useMemo(
     () => trades.find((trade) => trade.id === editingId) ?? null,
@@ -3925,6 +4073,13 @@ export default function TradeJournal({
     value: PlaybookFormState[Key]
   ) {
     setInlinePlaybookForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateProfileForm<Key extends keyof ProfileFormState>(
+    key: Key,
+    value: ProfileFormState[Key]
+  ) {
+    setProfileForm((current) => ({ ...current, [key]: value }));
   }
 
   function resetForm() {
@@ -4126,6 +4281,50 @@ export default function TradeJournal({
       );
     } finally {
       setDeletingPlaybookId(null);
+    }
+  }
+
+  async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setProfileError(null);
+
+    const result = buildProfilePayload(profileForm, profile?.bio ?? "");
+
+    if (result.error) {
+      setProfileError(result.error);
+      return;
+    }
+
+    setProfileSaving(true);
+
+    try {
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result.payload),
+      });
+      const body = await readApiBody(response);
+
+      if (!response.ok || !body?.profile) {
+        throw new Error(
+          formatApiError(body, "Unable to save your profile. Try again.")
+        );
+      }
+
+      setProfile(body.profile);
+      setProfileForm({
+        displayName: body.profile.displayName,
+        username: body.profile.username,
+      });
+      setProfileComplete(true);
+    } catch (caught) {
+      setProfileError(
+        caught instanceof Error
+          ? caught.message
+          : "Unable to save your profile. Try again."
+      );
+    } finally {
+      setProfileSaving(false);
     }
   }
 
@@ -4437,6 +4636,15 @@ export default function TradeJournal({
           deleting={deletingId === deleteCandidate.id}
           onCancel={() => setDeleteCandidate(null)}
           onConfirm={confirmDelete}
+        />
+      ) : null}
+      {!profileComplete ? (
+        <ProfileOnboardingDialog
+          form={profileForm}
+          saving={profileSaving}
+          error={profileError}
+          onUpdateForm={updateProfileForm}
+          onSubmit={handleProfileSubmit}
         />
       ) : null}
     </div>

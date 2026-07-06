@@ -4,6 +4,12 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { BarChart2, BookOpen, Target, TrendingUp } from "lucide-react";
 import type { PlaybookDto } from "@/lib/playbooks/types";
+import {
+  isProfileComplete,
+  serializeProfile,
+  suggestDisplayName,
+  suggestUsername,
+} from "@/lib/profile/types";
 import type { TradeDto } from "@/lib/trades/types";
 
 type HomeProps = {
@@ -257,13 +263,23 @@ export default async function Home({ searchParams }: HomeProps) {
   });
   const dbUser = await prisma.user.findUnique({
     where: { id: userId },
-    select: { emailVerified: true, image: true },
+    select: {
+      emailVerified: true,
+      image: true,
+      profile: {
+        select: { displayName: true, username: true, bio: true },
+      },
+    },
   });
 
   const serializedTrades = trades.map(serializeTrade);
   const serializedPlaybooks = playbooks.map(serializePlaybook);
+  const initialProfile = serializeProfile(dbUser?.profile ?? null);
   const displayName =
-    session.user?.name ?? session.user?.email ?? "Authenticated trader";
+    initialProfile?.displayName ??
+    session.user?.name ??
+    session.user?.email ??
+    "Authenticated trader";
 
   return (
     <TradeJournal
@@ -277,6 +293,13 @@ export default async function Home({ searchParams }: HomeProps) {
       accountProvider={account?.provider}
       accountType={account?.type}
       emailVerifiedIso={dbUser?.emailVerified?.toISOString() ?? null}
+      initialProfile={initialProfile}
+      initialProfileComplete={isProfileComplete(initialProfile)}
+      suggestedDisplayName={suggestDisplayName({
+        providerName: session.user?.name,
+        email: session.user?.email,
+      })}
+      suggestedUsername={suggestUsername(session.user?.email)}
       nowIso={new Date().toISOString()}
     />
   );
