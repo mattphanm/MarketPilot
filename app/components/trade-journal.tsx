@@ -3705,6 +3705,7 @@ export default function TradeJournal({
   const [trades, setTrades] = useState(() =>
     sortTrades(initialTrades.map(normalizeTrade))
   );
+  const shellScrollRef = useRef<HTMLDivElement | null>(null);
   const [playbooks, setPlaybooks] = useState(() =>
     sortPlaybooks(initialPlaybooks.map(normalizePlaybook))
   );
@@ -3800,6 +3801,17 @@ export default function TradeJournal({
       sort: tradeSort,
     });
   }, [resultFilter, sideFilter, tradeSearch, tradeSort, trades]);
+
+  useEffect(() => {
+    const shellScrollContainer = shellScrollRef.current;
+
+    if (!shellScrollContainer) {
+      return;
+    }
+
+    shellScrollContainer.scrollTop = 0;
+    shellScrollContainer.scrollLeft = 0;
+  }, [activeView]);
 
   function navigateToView(view: DashboardView) {
     setActiveView(view);
@@ -4248,6 +4260,7 @@ export default function TradeJournal({
         <MobileNav activeView={activeView} onNav={navigateToView} />
 
         <div
+          ref={shellScrollRef}
           className="min-h-0 flex-1 overflow-y-auto"
           data-testid="authenticated-shell-scroll-container"
         >

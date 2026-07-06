@@ -267,6 +267,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
   return (
     <TradeJournal
+      key={initialView}
       initialTrades={serializedTrades}
       initialPlaybooks={serializedPlaybooks}
       initialView={initialView}
