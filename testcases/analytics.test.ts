@@ -171,6 +171,162 @@ describe("analytics report calculations", () => {
     ]);
   });
 
+  it("applies all supported entry-time ranges to metrics, daily P&L, and equity curve", () => {
+    const now = new Date("2026-07-01T12:00:00.000Z");
+
+    const allReport = createAnalyticsReport(analyticsTrades, {
+      range: "all",
+      now,
+    });
+    const thirtyDayReport = createAnalyticsReport(analyticsTrades, {
+      range: "30d",
+      now,
+    });
+    const ninetyDayReport = createAnalyticsReport(analyticsTrades, {
+      range: "90d",
+      now,
+    });
+    const ytdReport = createAnalyticsReport(analyticsTrades, {
+      range: "ytd",
+      now,
+    });
+
+    expect(allReport.totalTrades).toBe(5);
+    expect(allReport.netPnl).toBe(120);
+    expect(allReport.daily.map((day) => day.dateKey)).toEqual([
+      "2026-01-02",
+      "2026-06-03",
+      "2026-06-04",
+      "2026-06-10",
+      "2026-06-11",
+    ]);
+    expect(allReport.equityCurve.map((point) => point.cumulativePnl)).toEqual([
+      20,
+      120,
+      100,
+      120,
+      120,
+    ]);
+
+    expect(thirtyDayReport.totalTrades).toBe(4);
+    expect(thirtyDayReport.netPnl).toBe(100);
+    expect(thirtyDayReport.daily.map((day) => day.dateKey)).toEqual([
+      "2026-06-03",
+      "2026-06-04",
+      "2026-06-10",
+      "2026-06-11",
+    ]);
+    expect(thirtyDayReport.equityCurve.map((point) => point.dateKey)).toEqual([
+      "2026-06-03",
+      "2026-06-04",
+      "2026-06-10",
+      "2026-06-11",
+    ]);
+
+    expect(ninetyDayReport.totalTrades).toBe(4);
+    expect(ninetyDayReport.netPnl).toBe(100);
+    expect(ninetyDayReport.daily.map((day) => day.dateKey)).toEqual(
+      thirtyDayReport.daily.map((day) => day.dateKey)
+    );
+
+    expect(ytdReport.totalTrades).toBe(5);
+    expect(ytdReport.netPnl).toBe(120);
+    expect(ytdReport.daily.map((day) => day.dateKey)).toEqual(
+      allReport.daily.map((day) => day.dateKey)
+    );
+  });
+
+  it("uses inclusive trailing and year-to-date entry-time boundaries", () => {
+    const boundaryTrades: AnalyticsTrade[] = [
+      {
+        id: "before-30d",
+        symbol: "ES",
+        side: "long",
+        riskDollars: 100,
+        rMultiple: 9,
+        openedAt: "2026-05-31T23:59:59.999Z",
+      },
+      {
+        id: "start-30d",
+        symbol: "NQ",
+        side: "long",
+        riskDollars: 100,
+        rMultiple: 1,
+        openedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: "end-day",
+        symbol: "YM",
+        side: "short",
+        riskDollars: 100,
+        rMultiple: 2,
+        openedAt: "2026-06-30T23:59:59.999Z",
+      },
+      {
+        id: "after-now-day",
+        symbol: "RTY",
+        side: "long",
+        riskDollars: 100,
+        rMultiple: 7,
+        openedAt: "2026-07-01T00:00:00.000Z",
+      },
+      {
+        id: "ytd-start",
+        symbol: "CL",
+        side: "short",
+        riskDollars: 100,
+        rMultiple: 3,
+        openedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    const thirtyDayTrades = filterAnalyticsTradesByEntryTime(boundaryTrades, {
+      range: "30d",
+      now: new Date("2026-06-30T12:00:00.000Z"),
+    });
+    const ytdTrades = filterAnalyticsTradesByEntryTime(boundaryTrades, {
+      range: "ytd",
+      now: new Date("2026-06-30T12:00:00.000Z"),
+    });
+
+    expect(thirtyDayTrades.map((trade) => trade.id)).toEqual([
+      "start-30d",
+      "end-day",
+    ]);
+    expect(ytdTrades.map((trade) => trade.id)).toEqual([
+      "before-30d",
+      "start-30d",
+      "end-day",
+      "ytd-start",
+    ]);
+  });
+
+  it("returns a valid zeroed report for an empty selected entry-time window", () => {
+    const report = createAnalyticsReport(analyticsTrades, {
+      range: "30d",
+      now: new Date("2026-12-31T12:00:00.000Z"),
+    });
+
+    expect(report.totalTrades).toBe(0);
+    expect(report.closedTrades).toBe(0);
+    expect(report.openTrades).toBe(0);
+    expect(report.netPnl).toBe(0);
+    expect(report.grossProfit).toBe(0);
+    expect(report.grossLoss).toBe(0);
+    expect(report.winRate).toBeNull();
+    expect(report.profitFactor).toBeNull();
+    expect(report.averageRMultiple).toBeNull();
+    expect(report.averageWin).toBe(0);
+    expect(report.averageLoss).toBe(0);
+    expect(report.expectancy).toBe(0);
+    expect(report.bestTradePnl).toBeNull();
+    expect(report.worstTradePnl).toBeNull();
+    expect(report.bestDayPnl).toBeNull();
+    expect(report.worstDayPnl).toBeNull();
+    expect(report.daily).toEqual([]);
+    expect(report.equityCurve).toEqual([]);
+  });
+
   it("filters metrics by explicit entry-time start and end dates", () => {
     const report = createAnalyticsReport(analyticsTrades, {
       start: new Date("2026-06-04T00:00:00.000Z"),
