@@ -5,6 +5,7 @@ import {
   suggestDisplayName,
   suggestUsername,
 } from "../lib/profile/types";
+import { ProfileSchema } from "../lib/validations/profile";
 
 const pageSource = readFileSync("app/page.tsx", "utf8");
 const shellSource = readFileSync("app/components/trade-journal.tsx", "utf8");
@@ -55,5 +56,94 @@ describe("required profile onboarding happy path", () => {
     expect(routeSource).toContain("displayName: true");
     expect(routeSource).toContain("username: true");
     expect(routeSource).toContain("bio: true");
+  });
+});
+
+describe("authoritative profile validation and errors", () => {
+  it("validates and normalizes accepted profile input", () => {
+    const result = ProfileSchema.safeParse({
+      displayName: "  Futures Trader  ",
+      username: "Futures_Trader",
+      bio: "  Opening range specialist.  ",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data).toEqual({
+      displayName: "Futures Trader",
+      username: "futures_trader",
+      bio: "Opening range specialist.",
+    });
+  });
+
+  it("normalizes blank and omitted bio to no bio", () => {
+    expect(
+      ProfileSchema.parse({
+        displayName: "Matt",
+        username: "matt_phan",
+        bio: "   ",
+      }).bio
+    ).toBe("");
+    expect(
+      ProfileSchema.parse({
+        displayName: "Matt",
+        username: "matt_phan",
+      }).bio
+    ).toBe("");
+  });
+
+  it("rejects invalid display names, usernames, reserved names, and long bios", () => {
+    expect(
+      ProfileSchema.safeParse({
+        displayName: "   ",
+        username: "valid_name",
+      }).success
+    ).toBe(false);
+    expect(
+      ProfileSchema.safeParse({
+        displayName: "A display name that is too long",
+        username: "valid_name",
+      }).success
+    ).toBe(false);
+    expect(
+      ProfileSchema.safeParse({
+        displayName: "Matt",
+        username: "ma",
+      }).success
+    ).toBe(false);
+    expect(
+      ProfileSchema.safeParse({
+        displayName: "Matt",
+        username: "name-with-dash",
+      }).success
+    ).toBe(false);
+    expect(
+      ProfileSchema.safeParse({
+        displayName: "Matt",
+        username: "settings",
+      }).success
+    ).toBe(false);
+    expect(
+      ProfileSchema.safeParse({
+        displayName: "Matt",
+        username: "valid_name",
+        bio: "x".repeat(281),
+      }).success
+    ).toBe(false);
+  });
+
+  it("keeps server-side validation authoritative with existing error shapes", () => {
+    expect(routeSource).toContain('{ error: "Bad request" }');
+    expect(routeSource).toContain('{ error: "Invalid profile input", issues: result.error.issues }');
+    expect(routeSource).toContain('message: "This username is already taken."');
+    expect(routeSource).toContain("caught.code === \"P2002\"");
+  });
+
+  it("shows field-level onboarding errors and prevents duplicate saves", () => {
+    expect(shellSource).toContain("type ProfileFieldErrors");
+    expect(shellSource).toContain("setProfileFieldErrors(result.fieldErrors)");
+    expect(shellSource).toContain("getProfileFieldErrors(body?.issues)");
+    expect(shellSource).toContain("fieldErrors.displayName");
+    expect(shellSource).toContain("fieldErrors.username");
+    expect(shellSource).toContain("disabled={saving}");
   });
 });

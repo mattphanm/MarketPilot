@@ -123,6 +123,8 @@ type ProfileFormState = {
   username: string;
 };
 
+type ProfileFieldErrors = Partial<Record<keyof ProfileFormState, string>>;
+
 type ApiIssue = {
   path?: Array<string | number>;
   message?: string;
@@ -677,27 +679,36 @@ function buildPlaybookPayload(
 function buildProfilePayload(
   form: ProfileFormState,
   currentBio: string
-): { payload: ProfileDto; error: null } | { payload: null; error: string } {
+):
+  | { payload: ProfileDto; fieldErrors: ProfileFieldErrors }
+  | { payload: null; fieldErrors: ProfileFieldErrors } {
   const displayName = form.displayName.trim();
   const username = form.username.trim().toLowerCase();
+  const fieldErrors: ProfileFieldErrors = {};
 
   if (!displayName) {
-    return { payload: null, error: "Display name is required." };
+    fieldErrors.displayName = "Display name is required.";
+  } else if (displayName.length > 25) {
+    fieldErrors.displayName = "Display name must be 25 characters or fewer.";
   }
 
   if (!username) {
-    return { payload: null, error: "Username is required." };
+    fieldErrors.username = "Username is required.";
+  } else if (username.length < 3) {
+    fieldErrors.username = "Username must be at least 3 characters.";
+  } else if (username.length > 24) {
+    fieldErrors.username = "Username must be 24 characters or fewer.";
+  } else if (!/^[a-z0-9_]+$/.test(username)) {
+    fieldErrors.username =
+      "Username can only use lowercase letters, numbers, and underscores.";
+  } else if (
+    ["settings", "admin", "api", "login", "marketpilot"].includes(username)
+  ) {
+    fieldErrors.username = "This username is reserved.";
   }
 
-  if (username.length < 3) {
-    return { payload: null, error: "Username must be at least 3 characters." };
-  }
-
-  if (!/^[a-z0-9_]+$/.test(username)) {
-    return {
-      payload: null,
-      error: "Username can only use letters, numbers, and underscores.",
-    };
+  if (Object.keys(fieldErrors).length > 0) {
+    return { payload: null, fieldErrors };
   }
 
   return {
@@ -706,8 +717,26 @@ function buildProfilePayload(
       username,
       bio: currentBio,
     },
-    error: null,
+    fieldErrors,
   };
+}
+
+function getProfileFieldErrors(issues: ApiIssue[] | undefined) {
+  const fieldErrors: ProfileFieldErrors = {};
+
+  for (const issue of issues ?? []) {
+    const field = issue.path?.[0];
+
+    if (
+      (field === "displayName" || field === "username") &&
+      issue.message &&
+      !fieldErrors[field]
+    ) {
+      fieldErrors[field] = issue.message;
+    }
+  }
+
+  return fieldErrors;
 }
 
 function MetricCard({
@@ -1070,12 +1099,14 @@ function ProfileOnboardingDialog({
   form,
   saving,
   error,
+  fieldErrors,
   onUpdateForm,
   onSubmit,
 }: {
   form: ProfileFormState;
   saving: boolean;
   error: string | null;
+  fieldErrors: ProfileFieldErrors;
   onUpdateForm: <Key extends keyof ProfileFormState>(
     key: Key,
     value: ProfileFormState[Key]
@@ -1116,8 +1147,20 @@ function ProfileOnboardingDialog({
                 onUpdateForm("displayName", event.target.value)
               }
               autoFocus
-              className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              aria-invalid={Boolean(fieldErrors.displayName)}
+              aria-describedby={
+                fieldErrors.displayName ? "profile-display-name-error" : undefined
+              }
+              className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 aria-invalid:border-[#C83F3F]"
             />
+            {fieldErrors.displayName ? (
+              <span
+                id="profile-display-name-error"
+                className="mt-1 block text-[11px] font-medium text-[#C83F3F]"
+              >
+                {fieldErrors.displayName}
+              </span>
+            ) : null}
           </label>
 
           <label className="block">
@@ -1127,8 +1170,20 @@ function ProfileOnboardingDialog({
             <input
               value={form.username}
               onChange={(event) => onUpdateForm("username", event.target.value)}
-              className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10"
+              aria-invalid={Boolean(fieldErrors.username)}
+              aria-describedby={
+                fieldErrors.username ? "profile-username-error" : undefined
+              }
+              className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 aria-invalid:border-[#C83F3F]"
             />
+            {fieldErrors.username ? (
+              <span
+                id="profile-username-error"
+                className="mt-1 block text-[11px] font-medium text-[#C83F3F]"
+              >
+                {fieldErrors.username}
+              </span>
+            ) : null}
           </label>
 
           {error ? (
@@ -3906,6 +3961,8 @@ export default function TradeJournal({
   }));
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileFieldErrors, setProfileFieldErrors] =
+    useState<ProfileFieldErrors>({});
   const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
   const displayName =
     profile?.displayName || userName || userEmail || "Authenticated trader";
@@ -4080,6 +4137,10 @@ export default function TradeJournal({
     value: ProfileFormState[Key]
   ) {
     setProfileForm((current) => ({ ...current, [key]: value }));
+    setProfileFieldErrors(
+      buildProfilePayload({ ...profileForm, [key]: value }, profile?.bio ?? "")
+        .fieldErrors
+    );
   }
 
   function resetForm() {
@@ -4289,9 +4350,9 @@ export default function TradeJournal({
     setProfileError(null);
 
     const result = buildProfilePayload(profileForm, profile?.bio ?? "");
+    setProfileFieldErrors(result.fieldErrors);
 
-    if (result.error) {
-      setProfileError(result.error);
+    if (!result.payload) {
       return;
     }
 
@@ -4306,12 +4367,17 @@ export default function TradeJournal({
       const body = await readApiBody(response);
 
       if (!response.ok || !body?.profile) {
+        const fieldErrors = getProfileFieldErrors(body?.issues);
+        setProfileFieldErrors(fieldErrors);
         throw new Error(
-          formatApiError(body, "Unable to save your profile. Try again.")
+          Object.keys(fieldErrors).length > 0
+            ? ""
+            : formatApiError(body, "Unable to save your profile. Try again.")
         );
       }
 
       setProfile(body.profile);
+      setProfileFieldErrors({});
       setProfileForm({
         displayName: body.profile.displayName,
         username: body.profile.username,
@@ -4319,9 +4385,11 @@ export default function TradeJournal({
       setProfileComplete(true);
     } catch (caught) {
       setProfileError(
-        caught instanceof Error
+        caught instanceof Error && caught.message
           ? caught.message
-          : "Unable to save your profile. Try again."
+          : caught instanceof Error
+            ? null
+            : "Unable to save your profile. Try again."
       );
     } finally {
       setProfileSaving(false);
@@ -4643,6 +4711,7 @@ export default function TradeJournal({
           form={profileForm}
           saving={profileSaving}
           error={profileError}
+          fieldErrors={profileFieldErrors}
           onUpdateForm={updateProfileForm}
           onSubmit={handleProfileSubmit}
         />
