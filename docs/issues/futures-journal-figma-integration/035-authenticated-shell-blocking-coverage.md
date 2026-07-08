@@ -23,3 +23,7 @@ Prove that incomplete profile state blocks every authenticated view before app i
 
 - docs/issues/futures-journal-figma-integration/032-required-profile-onboarding-happy-path.md
 - docs/issues/futures-journal-figma-integration/033-authoritative-profile-validation-and-errors.md
+
+## Coverage note
+
+Automated coverage for this slice is source-level Vitest coverage in `testcases/profile-onboarding.test.ts`. Browser and visual verification are intentionally left manual for reviewers: check direct links for each authenticated `view`, confirm the shell remains visible behind the onboarding overlay, confirm pointer and keyboard interaction behind the modal is blocked, tab through the onboarding controls to verify focus containment, submit invalid values to confirm exact field errors remain visible, and save valid values to confirm the modal closes without changing the current view.

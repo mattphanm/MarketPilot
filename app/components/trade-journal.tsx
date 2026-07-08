@@ -8,6 +8,7 @@ import {
   useState,
   type FocusEvent,
   type FormEvent,
+  type KeyboardEvent,
 } from "react";
 import {
   ArrowDown,
@@ -1122,11 +1123,62 @@ function ProfileOnboardingDialog({
   ) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    dialogRef.current
+      ?.querySelector<HTMLElement>("[data-profile-onboarding-initial-focus]")
+      ?.focus();
+  }, []);
+
+  function trapProfileOnboardingFocus(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    const dialog = dialogRef.current;
+
+    if (!dialog) {
+      return;
+    }
+
+    const focusableControls = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((control) => !control.hasAttribute("aria-hidden"));
+    const firstControl = focusableControls[0];
+    const lastControl = focusableControls.at(-1);
+
+    if (!firstControl || !lastControl) {
+      return;
+    }
+
+    if (!dialog.contains(document.activeElement)) {
+      event.preventDefault();
+      firstControl.focus();
+      return;
+    }
+
+    if (event.shiftKey && document.activeElement === firstControl) {
+      event.preventDefault();
+      lastControl.focus();
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === lastControl) {
+      event.preventDefault();
+      firstControl.focus();
+    }
+  }
+
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="profile-onboarding-title"
+      onKeyDown={trapProfileOnboardingFocus}
       className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-3 sm:p-4"
     >
       <form
@@ -1156,6 +1208,7 @@ function ProfileOnboardingDialog({
                 onUpdateForm("displayName", event.target.value)
               }
               autoFocus
+              data-profile-onboarding-initial-focus
               aria-invalid={Boolean(fieldErrors.displayName)}
               aria-describedby={
                 fieldErrors.displayName ? "profile-display-name-error" : undefined
@@ -4592,153 +4645,159 @@ export default function TradeJournal({
 
   return (
     <div className="h-dvh overflow-hidden bg-[#F7F8FA] text-[#171923] lg:flex">
-      <Sidebar
-        activeView={activeView}
-        userName={displayName}
-        userEmail={userEmail}
-        onAddTrade={openNewTrade}
-        onNav={navigateToView}
-      />
-
-      <main className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
-        <TopBar
-          title={meta.title}
-          subtitle={meta.subtitle}
+      <div
+        className="contents"
+        aria-hidden={!profileComplete}
+        inert={!profileComplete}
+      >
+        <Sidebar
+          activeView={activeView}
           userName={displayName}
-          analyticsRange={analyticsRange}
-          onRangeChange={updateAnalyticsRange}
+          userEmail={userEmail}
+          onAddTrade={openNewTrade}
+          onNav={navigateToView}
         />
-        <MobileNav activeView={activeView} onNav={navigateToView} />
 
-        <div
-          ref={shellScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto"
-          data-testid="authenticated-shell-scroll-container"
-          onFocusCapture={revealFocusedShellControl}
-        >
-          {activeView === "dashboard" ? (
-            <DashboardOverview
-              trades={trades}
-              report={analyticsReport}
-              score={score}
-              onNav={navigateToView}
-            />
-          ) : null}
+        <main className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
+          <TopBar
+            title={meta.title}
+            subtitle={meta.subtitle}
+            userName={displayName}
+            analyticsRange={analyticsRange}
+            onRangeChange={updateAnalyticsRange}
+          />
+          <MobileNav activeView={activeView} onNav={navigateToView} />
 
-          {activeView === "trades" ? (
-            <TradeLogView
-              trades={filteredTrades}
-              playbooks={playbooks}
-              search={tradeSearch}
-              resultFilter={resultFilter}
-              sideFilter={sideFilter}
-              activeSort={tradeSort}
-              selectedTrade={selectedTrade}
-              deletingId={deletingId}
-              error={error}
-              saving={saving}
-              onSearchChange={setTradeSearch}
-              onResultFilterChange={setResultFilter}
-              onSideFilterChange={setSideFilter}
-              onSortChange={updateTradeSort}
-              onSelectTrade={(trade) => setSelectedTradeId(trade?.id ?? null)}
-              onEdit={startEdit}
-              onDelete={requestDelete}
-              onAddTrade={openNewTrade}
-            />
-          ) : null}
+          <div
+            ref={shellScrollRef}
+            className="min-h-0 flex-1 overflow-y-auto"
+            data-testid="authenticated-shell-scroll-container"
+            onFocusCapture={revealFocusedShellControl}
+          >
+            {activeView === "dashboard" ? (
+              <DashboardOverview
+                trades={trades}
+                report={analyticsReport}
+                score={score}
+                onNav={navigateToView}
+              />
+            ) : null}
 
-          {activeView === "playbooks" ? (
-            <PlaybooksView
-              storedPlaybooks={playbooks}
-              trades={analyticsTrades}
-              form={playbookForm}
-              editingPlaybook={editingPlaybook}
-              saving={playbookSaving}
-              deletingId={deletingPlaybookId}
-              error={playbookError}
-              showModal={showPlaybookModal}
-              onUpdateForm={updatePlaybookForm}
-              onSubmit={handlePlaybookSubmit}
-              onNew={openNewPlaybook}
-              onEditPlaybook={startEditPlaybook}
-              onDeletePlaybook={handleDeletePlaybook}
-              onCancel={resetPlaybookForm}
-              onEdit={startEdit}
-              onLogTrade={openTradeForPlaybook}
-            />
-          ) : null}
+            {activeView === "trades" ? (
+              <TradeLogView
+                trades={filteredTrades}
+                playbooks={playbooks}
+                search={tradeSearch}
+                resultFilter={resultFilter}
+                sideFilter={sideFilter}
+                activeSort={tradeSort}
+                selectedTrade={selectedTrade}
+                deletingId={deletingId}
+                error={error}
+                saving={saving}
+                onSearchChange={setTradeSearch}
+                onResultFilterChange={setResultFilter}
+                onSideFilterChange={setSideFilter}
+                onSortChange={updateTradeSort}
+                onSelectTrade={(trade) => setSelectedTradeId(trade?.id ?? null)}
+                onEdit={startEdit}
+                onDelete={requestDelete}
+                onAddTrade={openNewTrade}
+              />
+            ) : null}
 
-          {activeView === "analytics" ? (
-            <AnalyticsView
-              report={analyticsReport}
-              score={score}
-              radarPoints={radarPoints}
-              playbooks={analyticsPlaybooks}
-              analyticsRange={analyticsRange}
-              analyticsStart={analyticsStart}
-              analyticsEnd={analyticsEnd}
-              onRangeChange={updateAnalyticsRange}
-              onStartChange={updateAnalyticsStart}
-              onEndChange={setAnalyticsEnd}
-              onClearCustomRange={clearAnalyticsCustomRange}
-            />
-          ) : null}
+            {activeView === "playbooks" ? (
+              <PlaybooksView
+                storedPlaybooks={playbooks}
+                trades={analyticsTrades}
+                form={playbookForm}
+                editingPlaybook={editingPlaybook}
+                saving={playbookSaving}
+                deletingId={deletingPlaybookId}
+                error={playbookError}
+                showModal={showPlaybookModal}
+                onUpdateForm={updatePlaybookForm}
+                onSubmit={handlePlaybookSubmit}
+                onNew={openNewPlaybook}
+                onEditPlaybook={startEditPlaybook}
+                onDeletePlaybook={handleDeletePlaybook}
+                onCancel={resetPlaybookForm}
+                onEdit={startEdit}
+                onLogTrade={openTradeForPlaybook}
+              />
+            ) : null}
 
-          {activeView === "journal" && !tradeFormOpen ? (
-            <JournalReviewView
-              trades={trades}
-              playbooks={playbooks}
-              editingId={editingJournalId}
-              form={journalForm}
-              saving={journalSaving}
-              error={journalError}
-              onStartEdit={startJournalEdit}
-              onCancelEdit={resetJournalEdit}
-              onSubmitEdit={handleJournalSubmit}
-              onUpdateForm={updateJournalForm}
-              onAddTrade={openNewTrade}
-            />
-          ) : null}
+            {activeView === "analytics" ? (
+              <AnalyticsView
+                report={analyticsReport}
+                score={score}
+                radarPoints={radarPoints}
+                playbooks={analyticsPlaybooks}
+                analyticsRange={analyticsRange}
+                analyticsStart={analyticsStart}
+                analyticsEnd={analyticsEnd}
+                onRangeChange={updateAnalyticsRange}
+                onStartChange={updateAnalyticsStart}
+                onEndChange={setAnalyticsEnd}
+                onClearCustomRange={clearAnalyticsCustomRange}
+              />
+            ) : null}
 
-          {activeView === "journal" && tradeFormOpen ? (
-            <TradeFormView
-              form={form}
-              editingTrade={editingTrade}
-              saving={saving}
-              inlinePlaybookOpen={inlinePlaybookOpen}
-              inlinePlaybookForm={inlinePlaybookForm}
-              inlinePlaybookSaving={inlinePlaybookSaving}
-              inlinePlaybookError={inlinePlaybookError}
-              error={error}
-              trades={trades}
-              playbooks={playbooks}
-              onUpdateForm={updateForm}
-              onUpdateInlinePlaybookForm={updateInlinePlaybookForm}
-              onOpenInlinePlaybook={openInlinePlaybook}
-              onCancelInlinePlaybook={resetInlinePlaybookForm}
-              onSubmitInlinePlaybook={handleInlinePlaybookSubmit}
-              onSubmit={handleSubmit}
-              onReset={resetForm}
-              onEdit={startEdit}
-            />
-          ) : null}
+            {activeView === "journal" && !tradeFormOpen ? (
+              <JournalReviewView
+                trades={trades}
+                playbooks={playbooks}
+                editingId={editingJournalId}
+                form={journalForm}
+                saving={journalSaving}
+                error={journalError}
+                onStartEdit={startJournalEdit}
+                onCancelEdit={resetJournalEdit}
+                onSubmitEdit={handleJournalSubmit}
+                onUpdateForm={updateJournalForm}
+                onAddTrade={openNewTrade}
+              />
+            ) : null}
 
-          {activeView === "settings" ? (
-            <SettingsView
-              userName={displayName}
-              userEmail={userEmail}
-              userImage={userImage}
-              accountProvider={accountProvider}
-              accountType={accountType}
-              emailVerifiedIso={emailVerifiedIso}
-              trades={trades}
-              playbooks={playbooks}
-              report={analyticsReport}
-            />
-          ) : null}
-        </div>
-      </main>
+            {activeView === "journal" && tradeFormOpen ? (
+              <TradeFormView
+                form={form}
+                editingTrade={editingTrade}
+                saving={saving}
+                inlinePlaybookOpen={inlinePlaybookOpen}
+                inlinePlaybookForm={inlinePlaybookForm}
+                inlinePlaybookSaving={inlinePlaybookSaving}
+                inlinePlaybookError={inlinePlaybookError}
+                error={error}
+                trades={trades}
+                playbooks={playbooks}
+                onUpdateForm={updateForm}
+                onUpdateInlinePlaybookForm={updateInlinePlaybookForm}
+                onOpenInlinePlaybook={openInlinePlaybook}
+                onCancelInlinePlaybook={resetInlinePlaybookForm}
+                onSubmitInlinePlaybook={handleInlinePlaybookSubmit}
+                onSubmit={handleSubmit}
+                onReset={resetForm}
+                onEdit={startEdit}
+              />
+            ) : null}
+
+            {activeView === "settings" ? (
+              <SettingsView
+                userName={displayName}
+                userEmail={userEmail}
+                userImage={userImage}
+                accountProvider={accountProvider}
+                accountType={accountType}
+                emailVerifiedIso={emailVerifiedIso}
+                trades={trades}
+                playbooks={playbooks}
+                report={analyticsReport}
+              />
+            ) : null}
+          </div>
+        </main>
+      </div>
       {deleteCandidate ? (
         <DeleteTradeDialog
           trade={deleteCandidate}
