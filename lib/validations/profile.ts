@@ -8,7 +8,7 @@ export const RESERVED_USERNAMES = new Set([
   "marketpilot",
 ]);
 
-export const ProfileSchema = z.object({
+export const ProfileInputSchema = z.object({
   displayName: z
     .string()
     .trim()
@@ -36,4 +36,40 @@ export const ProfileSchema = z.object({
     .transform((bio) => bio || ""),
 });
 
+export const ProfileSchema = ProfileInputSchema.refine(
+  (profile) => !isReservedUsername(profile.username),
+  {
+    path: ["username"],
+    message: "That username is reserved.",
+  }
+);
+
 export type ProfilePayload = z.infer<typeof ProfileSchema>;
+
+export function isReservedUsername(username: string) {
+  return RESERVED_USERNAMES.has(username);
+}
+
+export function buildUnavailableUsernameSuggestions(
+  username: string,
+  unavailableUsernames: Set<string>,
+  options: { limit?: number; maxSuffix?: number } = {}
+) {
+  const limit = options.limit ?? 3;
+  const maxSuffix = options.maxSuffix ?? 12;
+  const suggestions: string[] = [];
+
+  for (let suffix = 2; suffix <= maxSuffix && suggestions.length < limit; suffix += 1) {
+    const candidate = `${username}_${suffix}`;
+
+    if (candidate.length > 24) {
+      continue;
+    }
+
+    if (!unavailableUsernames.has(candidate) && !isReservedUsername(candidate)) {
+      suggestions.push(candidate);
+    }
+  }
+
+  return suggestions;
+}

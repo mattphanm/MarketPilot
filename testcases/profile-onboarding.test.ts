@@ -5,7 +5,10 @@ import {
   suggestDisplayName,
   suggestUsername,
 } from "../lib/profile/types";
-import { ProfileSchema } from "../lib/validations/profile";
+import {
+  ProfileSchema,
+  buildUnavailableUsernameSuggestions,
+} from "../lib/validations/profile";
 
 const pageSource = readFileSync("app/page.tsx", "utf8");
 const shellSource = readFileSync("app/components/trade-journal.tsx", "utf8");
@@ -134,8 +137,10 @@ describe("authoritative profile validation and errors", () => {
   it("keeps server-side validation authoritative with existing error shapes", () => {
     expect(routeSource).toContain('{ error: "Bad request" }');
     expect(routeSource).toContain('{ error: "Invalid profile input", issues: result.error.issues }');
-    expect(routeSource).toContain('message: "This username is already taken."');
+    expect(routeSource).toContain('message: "That username is unavailable."');
+    expect(routeSource).toContain('message: "That username is reserved."');
     expect(routeSource).toContain("caught.code === \"P2002\"");
+    expect(routeSource).toContain("{ status: 409 }");
   });
 
   it("shows field-level onboarding errors and prevents duplicate saves", () => {
@@ -145,5 +150,48 @@ describe("authoritative profile validation and errors", () => {
     expect(shellSource).toContain("fieldErrors.displayName");
     expect(shellSource).toContain("fieldErrors.username");
     expect(shellSource).toContain("disabled={saving}");
+  });
+});
+
+describe("unavailable username suggestions", () => {
+  it("builds up to three bounded suffix suggestions and skips unavailable names", () => {
+    expect(
+      buildUnavailableUsernameSuggestions(
+        "futures",
+        new Set(["futures_2", "futures_4"])
+      )
+    ).toEqual(["futures_3", "futures_5", "futures_6"]);
+    expect(
+      buildUnavailableUsernameSuggestions(
+        "abcdefghijklmnopqrstuvw",
+        new Set(),
+        { maxSuffix: 4 }
+      )
+    ).toEqual([]);
+    expect(
+      buildUnavailableUsernameSuggestions(
+        "taken",
+        new Set(["taken_2", "taken_3", "taken_4"]),
+        { maxSuffix: 4 }
+      )
+    ).toEqual([]);
+  });
+
+  it("returns profile username conflicts as 409 responses with suggestions", () => {
+    expect(routeSource).toContain("ProfileInputSchema.safeParse");
+    expect(routeSource).toContain("getUsernameAvailabilityIssue");
+    expect(routeSource).toContain("prisma.profile.findMany");
+    expect(routeSource).toContain("buildUnavailableUsernameSuggestions");
+    expect(routeSource).toContain("suggestions: usernameAvailability.suggestions");
+    expect(routeSource).toContain("existingSubmittedUsername.userId !== userId");
+  });
+
+  it("renders username suggestions as clickable options without auto-replacing failed input", () => {
+    expect(shellSource).toContain("profileUsernameSuggestions");
+    expect(shellSource).toContain("getProfileUsernameSuggestions(body?.issues)");
+    expect(shellSource).toContain("usernameSuggestions.map((suggestion)");
+    expect(shellSource).toContain('type="button"');
+    expect(shellSource).toContain('onClick={() => onUpdateForm("username", suggestion)}');
+    expect(shellSource).not.toContain("setProfileForm(body.profile");
   });
 });

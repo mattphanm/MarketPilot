@@ -128,6 +128,7 @@ type ProfileFieldErrors = Partial<Record<keyof ProfileFormState, string>>;
 type ApiIssue = {
   path?: Array<string | number>;
   message?: string;
+  suggestions?: string[];
 };
 
 type ApiTradeBody = {
@@ -739,6 +740,12 @@ function getProfileFieldErrors(issues: ApiIssue[] | undefined) {
   return fieldErrors;
 }
 
+function getProfileUsernameSuggestions(issues: ApiIssue[] | undefined) {
+  const usernameIssue = issues?.find((issue) => issue.path?.[0] === "username");
+
+  return usernameIssue?.suggestions?.slice(0, 3) ?? [];
+}
+
 function MetricCard({
   label,
   value,
@@ -1100,6 +1107,7 @@ function ProfileOnboardingDialog({
   saving,
   error,
   fieldErrors,
+  usernameSuggestions,
   onUpdateForm,
   onSubmit,
 }: {
@@ -1107,6 +1115,7 @@ function ProfileOnboardingDialog({
   saving: boolean;
   error: string | null;
   fieldErrors: ProfileFieldErrors;
+  usernameSuggestions: string[];
   onUpdateForm: <Key extends keyof ProfileFormState>(
     key: Key,
     value: ProfileFormState[Key]
@@ -1172,7 +1181,14 @@ function ProfileOnboardingDialog({
               onChange={(event) => onUpdateForm("username", event.target.value)}
               aria-invalid={Boolean(fieldErrors.username)}
               aria-describedby={
-                fieldErrors.username ? "profile-username-error" : undefined
+                [
+                  fieldErrors.username ? "profile-username-error" : null,
+                  usernameSuggestions.length > 0
+                    ? "profile-username-suggestions"
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined
               }
               className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 aria-invalid:border-[#C83F3F]"
             />
@@ -1183,6 +1199,22 @@ function ProfileOnboardingDialog({
               >
                 {fieldErrors.username}
               </span>
+            ) : null}
+            {usernameSuggestions.length > 0 ? (
+              <div id="profile-username-suggestions" className="mt-2">
+                <div className="flex flex-wrap gap-2">
+                  {usernameSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => onUpdateForm("username", suggestion)}
+                      className="rounded-md border border-[#D5D9E5] bg-[#F7F8FB] px-2.5 py-1 text-[12px] font-medium text-[#3B4252] transition hover:border-[#6C5DD3] hover:text-[#5B4BC7]"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </label>
 
@@ -3963,6 +3995,9 @@ export default function TradeJournal({
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileFieldErrors, setProfileFieldErrors] =
     useState<ProfileFieldErrors>({});
+  const [profileUsernameSuggestions, setProfileUsernameSuggestions] = useState<
+    string[]
+  >([]);
   const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
   const displayName =
     profile?.displayName || userName || userEmail || "Authenticated trader";
@@ -4137,6 +4172,9 @@ export default function TradeJournal({
     value: ProfileFormState[Key]
   ) {
     setProfileForm((current) => ({ ...current, [key]: value }));
+    if (key === "username") {
+      setProfileUsernameSuggestions([]);
+    }
     setProfileFieldErrors(
       buildProfilePayload({ ...profileForm, [key]: value }, profile?.bio ?? "")
         .fieldErrors
@@ -4348,6 +4386,7 @@ export default function TradeJournal({
   async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setProfileError(null);
+    setProfileUsernameSuggestions([]);
 
     const result = buildProfilePayload(profileForm, profile?.bio ?? "");
     setProfileFieldErrors(result.fieldErrors);
@@ -4369,6 +4408,7 @@ export default function TradeJournal({
       if (!response.ok || !body?.profile) {
         const fieldErrors = getProfileFieldErrors(body?.issues);
         setProfileFieldErrors(fieldErrors);
+        setProfileUsernameSuggestions(getProfileUsernameSuggestions(body?.issues));
         throw new Error(
           Object.keys(fieldErrors).length > 0
             ? ""
@@ -4378,6 +4418,7 @@ export default function TradeJournal({
 
       setProfile(body.profile);
       setProfileFieldErrors({});
+      setProfileUsernameSuggestions([]);
       setProfileForm({
         displayName: body.profile.displayName,
         username: body.profile.username,
@@ -4712,6 +4753,7 @@ export default function TradeJournal({
           saving={profileSaving}
           error={profileError}
           fieldErrors={profileFieldErrors}
+          usernameSuggestions={profileUsernameSuggestions}
           onUpdateForm={updateProfileForm}
           onSubmit={handleProfileSubmit}
         />
