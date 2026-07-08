@@ -14,6 +14,87 @@ async function main() {
     });
   }
 
+  const usernameConflictFixtures = [
+    {
+      id: "seed-user-username-futures",
+      name: "Taken Futures",
+      email: "taken-futures@marketpilot.test",
+      username: "futures",
+      displayName: "Taken Futures",
+    },
+    {
+      id: "seed-user-username-futures-2",
+      name: "Taken Futures 2",
+      email: "taken-futures-2@marketpilot.test",
+      username: "futures_2",
+      displayName: "Taken Futures 2",
+    },
+    {
+      id: "seed-user-username-futures-4",
+      name: "Taken Futures 4",
+      email: "taken-futures-4@marketpilot.test",
+      username: "futures_4",
+      displayName: "Taken Futures 4",
+    },
+    {
+      id: "seed-user-username-scalper",
+      name: "Taken Scalper",
+      email: "taken-scalper@marketpilot.test",
+      username: "scalper",
+      displayName: "Taken Scalper",
+    },
+    {
+      id: "seed-user-username-scalper-2",
+      name: "Taken Scalper 2",
+      email: "taken-scalper-2@marketpilot.test",
+      username: "scalper_2",
+      displayName: "Taken Scalper 2",
+    },
+    {
+      id: "seed-user-username-scalper-3",
+      name: "Taken Scalper 3",
+      email: "taken-scalper-3@marketpilot.test",
+      username: "scalper_3",
+      displayName: "Taken Scalper 3",
+    },
+    {
+      id: "seed-user-username-scalper-4",
+      name: "Taken Scalper 4",
+      email: "taken-scalper-4@marketpilot.test",
+      username: "scalper_4",
+      displayName: "Taken Scalper 4",
+    },
+  ];
+
+  for (const fixture of usernameConflictFixtures) {
+    const fixtureUser = await prisma.user.upsert({
+      where: { email: fixture.email },
+      update: {
+        name: fixture.name,
+      },
+      create: {
+        id: fixture.id,
+        name: fixture.name,
+        email: fixture.email,
+      },
+    });
+
+    await prisma.profile.upsert({
+      where: { userId: fixtureUser.id },
+      update: {
+        displayName: fixture.displayName,
+        username: fixture.username,
+        bio: "Seed profile for username availability testing.",
+      },
+      create: {
+        userId: fixtureUser.id,
+        displayName: fixture.displayName,
+        username: fixture.username,
+        bio: "Seed profile for username availability testing.",
+      },
+    });
+  }
+
   const playbook = await prisma.playbook.upsert({
     where: { id: "seed-playbook-001" },
     update: {
@@ -188,6 +269,9 @@ async function main() {
   }
 
   console.log(`Seeded ${trades.length} trades for user ${user.email}`);
+  console.log(
+    "Seeded username conflict fixtures: futures, futures_2, futures_4, scalper, scalper_2, scalper_3, scalper_4"
+  );
 }
 
 main()
