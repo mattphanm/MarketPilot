@@ -61,6 +61,7 @@ import {
 import { buildPlaybookPerformance } from "@/lib/playbooks/performance";
 import type { PlaybookDto, PlaybookPayload } from "@/lib/playbooks/types";
 import type { InitialProfile, ProfileDto } from "@/lib/profile/types";
+import { ProfileInputSchema } from "@/lib/validations/profile";
 import {
   filterAndSortTradeLogRows,
   getTradeStatusLabel,
@@ -122,6 +123,7 @@ type PlaybookFormState = {
 type ProfileFormState = {
   displayName: string;
   username: string;
+  bio: string;
 };
 
 type ProfileFieldErrors = Partial<Record<keyof ProfileFormState, string>>;
@@ -679,46 +681,32 @@ function buildPlaybookPayload(
 }
 
 function buildProfilePayload(
-  form: ProfileFormState,
-  currentBio: string
+  form: ProfileFormState
 ):
   | { payload: ProfileDto; fieldErrors: ProfileFieldErrors }
   | { payload: null; fieldErrors: ProfileFieldErrors } {
-  const displayName = form.displayName.trim();
-  const username = form.username.trim().toLowerCase();
+  const result = ProfileInputSchema.safeParse(form);
   const fieldErrors: ProfileFieldErrors = {};
 
-  if (!displayName) {
-    fieldErrors.displayName = "Display name is required.";
-  } else if (displayName.length > 25) {
-    fieldErrors.displayName = "Display name must be 25 characters or fewer.";
-  }
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      const field = issue.path[0];
 
-  if (!username) {
-    fieldErrors.username = "Username is required.";
-  } else if (username.length < 3) {
-    fieldErrors.username = "Username must be at least 3 characters.";
-  } else if (username.length > 24) {
-    fieldErrors.username = "Username must be 24 characters or fewer.";
-  } else if (!/^[a-z0-9_]+$/.test(username)) {
-    fieldErrors.username =
-      "Username can only use lowercase letters, numbers, and underscores.";
-  } else if (
-    ["settings", "admin", "api", "login", "marketpilot"].includes(username)
-  ) {
-    fieldErrors.username = "This username is reserved.";
-  }
+      if (
+        (field === "displayName" ||
+          field === "username" ||
+          field === "bio") &&
+        !fieldErrors[field]
+      ) {
+        fieldErrors[field] = issue.message;
+      }
+    }
 
-  if (Object.keys(fieldErrors).length > 0) {
     return { payload: null, fieldErrors };
   }
 
   return {
-    payload: {
-      displayName,
-      username,
-      bio: currentBio,
-    },
+    payload: result.data,
     fieldErrors,
   };
 }
@@ -730,7 +718,7 @@ function getProfileFieldErrors(issues: ApiIssue[] | undefined) {
     const field = issue.path?.[0];
 
     if (
-      (field === "displayName" || field === "username") &&
+      (field === "displayName" || field === "username" || field === "bio") &&
       issue.message &&
       !fieldErrors[field]
     ) {
@@ -2791,9 +2779,17 @@ function SettingsView({
   accountProvider,
   accountType,
   emailVerifiedIso,
+  profileForm,
+  profileSaving,
+  profileError,
+  profileSuccess,
+  profileFieldErrors,
+  profileUsernameSuggestions,
   trades,
   playbooks,
   report,
+  onUpdateProfileForm,
+  onSubmitProfile,
 }: {
   userName: string;
   userEmail?: string | null;
@@ -2801,9 +2797,20 @@ function SettingsView({
   accountProvider?: string | null;
   accountType?: string | null;
   emailVerifiedIso?: string | null;
+  profileForm: ProfileFormState;
+  profileSaving: boolean;
+  profileError: string | null;
+  profileSuccess: string | null;
+  profileFieldErrors: ProfileFieldErrors;
+  profileUsernameSuggestions: string[];
   trades: TradeDto[];
   playbooks: PlaybookDto[];
   report: AnalyticsReport;
+  onUpdateProfileForm: <Key extends keyof ProfileFormState>(
+    key: Key,
+    value: ProfileFormState[Key]
+  ) => void;
+  onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const journaledTrades = trades.filter((trade) => trade.journalEntry).length;
   const totalRisk = trades.reduce((sum, trade) => sum + trade.riskDollars, 0);
@@ -2876,6 +2883,145 @@ function SettingsView({
               </button>
             </form>
           </div>
+        </AppCard>
+
+        <AppCard>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <SectionTitle>Profile</SectionTitle>
+              <p className="mt-1 text-[12px] leading-5 text-[#697386]">
+                Manage the trader identity shown inside MarketPilot.
+              </p>
+            </div>
+            {profileSuccess ? (
+              <span className="rounded-md bg-[#EAF7EF] px-2.5 py-1 text-[11px] font-semibold text-[#207A3E]">
+                {profileSuccess}
+              </span>
+            ) : null}
+          </div>
+
+          <form onSubmit={onSubmitProfile} className="mt-4 space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-[12px] font-medium text-[#697386]">
+                Display name
+              </span>
+              <input
+                value={profileForm.displayName}
+                onChange={(event) =>
+                  onUpdateProfileForm("displayName", event.target.value)
+                }
+                aria-invalid={Boolean(profileFieldErrors.displayName)}
+                aria-describedby={
+                  profileFieldErrors.displayName
+                    ? "settings-profile-display-name-error"
+                    : undefined
+                }
+                className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 aria-invalid:border-[#C83F3F]"
+              />
+              {profileFieldErrors.displayName ? (
+                <span
+                  id="settings-profile-display-name-error"
+                  className="mt-1 block text-[11px] font-medium text-[#C83F3F]"
+                >
+                  {profileFieldErrors.displayName}
+                </span>
+              ) : null}
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[12px] font-medium text-[#697386]">
+                Username
+              </span>
+              <input
+                value={profileForm.username}
+                onChange={(event) =>
+                  onUpdateProfileForm("username", event.target.value)
+                }
+                aria-invalid={Boolean(profileFieldErrors.username)}
+                aria-describedby={
+                  [
+                    profileFieldErrors.username
+                      ? "settings-profile-username-error"
+                      : null,
+                    profileUsernameSuggestions.length > 0
+                      ? "settings-profile-username-suggestions"
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
+                className="w-full rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 aria-invalid:border-[#C83F3F]"
+              />
+              {profileFieldErrors.username ? (
+                <span
+                  id="settings-profile-username-error"
+                  className="mt-1 block text-[11px] font-medium text-[#C83F3F]"
+                >
+                  {profileFieldErrors.username}
+                </span>
+              ) : null}
+              {profileUsernameSuggestions.length > 0 ? (
+                <div id="settings-profile-username-suggestions" className="mt-2">
+                  <div className="flex flex-wrap gap-2">
+                    {profileUsernameSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => onUpdateProfileForm("username", suggestion)}
+                        className="rounded-md border border-[#D5D9E5] bg-[#F7F8FB] px-2.5 py-1 text-[12px] font-medium text-[#3B4252] transition hover:border-[#6C5DD3] hover:text-[#5B4BC7]"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[12px] font-medium text-[#697386]">
+                Bio
+              </span>
+              <textarea
+                value={profileForm.bio}
+                onChange={(event) =>
+                  onUpdateProfileForm("bio", event.target.value)
+                }
+                rows={4}
+                aria-invalid={Boolean(profileFieldErrors.bio)}
+                aria-describedby={
+                  profileFieldErrors.bio
+                    ? "settings-profile-bio-error"
+                    : undefined
+                }
+                className="w-full resize-none rounded-lg border border-[#E6E8EF] bg-white px-3 py-2 text-[13px] leading-5 text-[#171923] outline-none focus:border-[#6C5DD3] focus:ring-2 focus:ring-[#6C5DD3]/10 aria-invalid:border-[#C83F3F]"
+              />
+              {profileFieldErrors.bio ? (
+                <span
+                  id="settings-profile-bio-error"
+                  className="mt-1 block text-[11px] font-medium text-[#C83F3F]"
+                >
+                  {profileFieldErrors.bio}
+                </span>
+              ) : null}
+            </label>
+
+            {profileError ? (
+              <div className="rounded-md border border-[#F2C2C2] bg-[#FFF8F8] px-3 py-2 text-[12px] text-[#C83F3F]">
+                {profileError}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={profileSaving}
+                className="h-9 rounded-md bg-[#6C5DD3] px-4 text-[12px] font-semibold text-white transition hover:bg-[#5B4BC7] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {profileSaving ? "Saving" : "Save Profile"}
+              </button>
+            </div>
+          </form>
         </AppCard>
 
         <AppCard>
@@ -4043,9 +4189,11 @@ export default function TradeJournal({
   const [profileForm, setProfileForm] = useState<ProfileFormState>(() => ({
     displayName: initialProfile?.displayName ?? suggestedDisplayName,
     username: initialProfile?.username ?? suggestedUsername,
+    bio: initialProfile?.bio ?? "",
   }));
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [profileFieldErrors, setProfileFieldErrors] =
     useState<ProfileFieldErrors>({});
   const [profileUsernameSuggestions, setProfileUsernameSuggestions] = useState<
@@ -4225,12 +4373,13 @@ export default function TradeJournal({
     value: ProfileFormState[Key]
   ) {
     setProfileForm((current) => ({ ...current, [key]: value }));
+    setProfileError(null);
+    setProfileSuccess(null);
     if (key === "username") {
       setProfileUsernameSuggestions([]);
     }
     setProfileFieldErrors(
-      buildProfilePayload({ ...profileForm, [key]: value }, profile?.bio ?? "")
-        .fieldErrors
+      buildProfilePayload({ ...profileForm, [key]: value }).fieldErrors
     );
   }
 
@@ -4439,9 +4588,10 @@ export default function TradeJournal({
   async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setProfileError(null);
+    setProfileSuccess(null);
     setProfileUsernameSuggestions([]);
 
-    const result = buildProfilePayload(profileForm, profile?.bio ?? "");
+    const result = buildProfilePayload(profileForm);
     setProfileFieldErrors(result.fieldErrors);
 
     if (!result.payload) {
@@ -4475,7 +4625,9 @@ export default function TradeJournal({
       setProfileForm({
         displayName: body.profile.displayName,
         username: body.profile.username,
+        bio: body.profile.bio,
       });
+      setProfileSuccess("Profile saved");
       setProfileComplete(true);
     } catch (caught) {
       setProfileError(
@@ -4790,9 +4942,17 @@ export default function TradeJournal({
                 accountProvider={accountProvider}
                 accountType={accountType}
                 emailVerifiedIso={emailVerifiedIso}
+                profileForm={profileForm}
+                profileSaving={profileSaving}
+                profileError={profileError}
+                profileSuccess={profileSuccess}
+                profileFieldErrors={profileFieldErrors}
+                profileUsernameSuggestions={profileUsernameSuggestions}
                 trades={trades}
                 playbooks={playbooks}
                 report={analyticsReport}
+                onUpdateProfileForm={updateProfileForm}
+                onSubmitProfile={handleProfileSubmit}
               />
             ) : null}
           </div>

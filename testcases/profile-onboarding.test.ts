@@ -245,7 +245,7 @@ describe("authenticated shell blocking profile coverage", () => {
   });
 
   it("keeps onboarding open and shows exact field-level problems after validation failure", () => {
-    expect(shellSource).toContain("const result = buildProfilePayload(profileForm, profile?.bio ?? \"\")");
+    expect(shellSource).toContain("const result = buildProfilePayload(profileForm)");
     expect(shellSource).toContain("setProfileFieldErrors(result.fieldErrors)");
     expect(shellSource).toContain("if (!result.payload) {");
     expect(shellSource).toContain("return;");
@@ -269,5 +269,70 @@ describe("authenticated shell blocking profile coverage", () => {
     expect(profileSubmitSource).not.toContain("navigateToView(");
     expect(profileSubmitSource).not.toContain("router.replace(");
     expect(profileSubmitSource).not.toContain("window.location");
+  });
+});
+
+
+describe("settings profile editing", () => {
+  it("renders Settings Profile as the editable home for app-owned identity", () => {
+    const settingsSource = shellSource.slice(
+      shellSource.indexOf("function SettingsView"),
+      shellSource.indexOf("function TradeLogView")
+    );
+
+    expect(settingsSource).toContain("<SectionTitle>Profile</SectionTitle>");
+    expect(settingsSource).toContain("value={profileForm.displayName}");
+    expect(settingsSource).toContain("value={profileForm.username}");
+    expect(settingsSource).toContain("value={profileForm.bio}");
+    expect(settingsSource).toContain("onSubmit={onSubmitProfile}");
+    expect(settingsSource).toContain("Username");
+    expect(settingsSource).not.toContain("public");
+  });
+
+  it("reuses onboarding validation, field errors, and authenticated save behavior", () => {
+    expect(shellSource).toContain(
+      'import { ProfileInputSchema } from "@/lib/validations/profile"'
+    );
+    expect(shellSource).toContain("const result = ProfileInputSchema.safeParse(form)");
+    expect(shellSource).toContain('field === "displayName" ||');
+    expect(shellSource).toContain('field === "username" ||');
+    expect(shellSource).toContain('field === "bio"');
+    expect(shellSource).toContain("const result = buildProfilePayload(profileForm)");
+    expect(shellSource).toContain('fetch("/api/profile", {');
+    expect(shellSource).toContain('method: "PUT"');
+  });
+
+  it("normalizes blank bio through the shared profile schema", () => {
+    expect(
+      ProfileSchema.parse({
+        displayName: "Matt",
+        username: "matt_phan",
+        bio: "",
+      }).bio
+    ).toBe("");
+  });
+
+  it("updates shell identity from the saved profile without a full page refresh", () => {
+    expect(shellSource).toContain("const displayName =");
+    expect(shellSource).toContain(
+      'profile?.displayName || userName || userEmail || "Authenticated trader"'
+    );
+    expect(shellSource).toContain("setProfile(body.profile)");
+    expect(shellSource).toContain("userName={displayName}");
+    const profileSubmitSource = shellSource.slice(
+      shellSource.indexOf("async function handleProfileSubmit"),
+      shellSource.indexOf("async function handleSubmit")
+    );
+
+    expect(profileSubmitSource).not.toContain("window.location");
+  });
+
+  it("shows Settings save feedback and disables duplicate saves", () => {
+    expect(shellSource).toContain("profileSuccess");
+    expect(shellSource).toContain('setProfileSuccess("Profile saved")');
+    expect(shellSource).toContain("disabled={profileSaving}");
+    expect(shellSource).toContain(
+      '{profileSaving ? "Saving" : "Save Profile"}'
+    );
   });
 });
