@@ -97,4 +97,50 @@ describe("authenticated shell responsive layout", () => {
     expect(source).toContain('className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-3 sm:p-4"');
     expect(source).toContain('className="max-h-[calc(100vh-24px)] w-full max-w-[420px] overflow-y-auto rounded-lg bg-white shadow-2xl sm:max-h-[calc(100vh-32px)]"');
   });
+
+  it("uses one shared account menu from the top-bar avatar and sidebar profile row", () => {
+    expect(source).toContain("function AccountMenu");
+    expect(source).toContain("function AccountAvatar");
+    expect(source).toContain('const [openAccountMenu, setOpenAccountMenu] = useState<"topbar" | "sidebar" | null>');
+    expect(source).toContain('accountMenuOpen={openAccountMenu === "sidebar"}');
+    expect(source).toContain('accountMenuOpen={openAccountMenu === "topbar"}');
+    expect(source).toContain('current === "sidebar" ? null : "sidebar"');
+    expect(source).toContain('current === "topbar" ? null : "topbar"');
+    expect(source).toContain("userImage={userImage}");
+    expect(source).toContain('aria-label="Open account menu"');
+  });
+
+  it("keeps account identity, Settings, and confirmed sign out inside the account menu", () => {
+    expect(source).toContain('role="menu"');
+    expect(source).toContain('aria-label="Account menu"');
+    expect(source).toContain("No email available");
+    expect(source).toContain("onAccountSettings={openSettingsProfile}");
+    expect(source).toContain("onRequestSignOut={requestSignOut}");
+    expect(source).toContain("function requestSignOut()");
+    expect(source).toContain("setSignOutConfirmOpen(true)");
+    expect(source).toContain("<SignOutDialog onCancel={() => setSignOutConfirmOpen(false)} />");
+  });
+
+  it("closes account menus on outside click and Escape", () => {
+    expect(source).toContain('document.addEventListener("mousedown", handlePointerDown)');
+    expect(source).toContain('document.addEventListener("keydown", handleKeyDown)');
+    expect(source).toContain('event.key === "Escape"');
+    expect(source).toContain("onCloseAccountMenu={() => setOpenAccountMenu(null)}");
+    expect(source).toContain("onMouseDown={(event) => event.stopPropagation()}");
+  });
+
+  it("routes account-menu Settings to the Profile settings tab", () => {
+    expect(source).toContain('const [activeSettingsTab, setActiveSettingsTab] =');
+    expect(source).toContain('useState<SettingsTab>("profile")');
+    expect(source).toContain("function openSettingsProfile()");
+    expect(source).toContain('setActiveSettingsTab("profile")');
+    expect(source).toContain('navigateToView("settings")');
+    expect(source).toContain("activeSettingsTab={activeSettingsTab}");
+    expect(source).toContain("onSettingsTabChange={setActiveSettingsTab}");
+  });
+
+  it("removes duplicate shell identity controls outside the unified account menu", () => {
+    expect(source).not.toContain("Futures Journal");
+    expect(source.match(/<form action=\{signOutUser\}>/g)).toHaveLength(1);
+  });
 });

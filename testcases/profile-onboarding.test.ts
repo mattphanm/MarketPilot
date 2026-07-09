@@ -384,7 +384,9 @@ describe("real settings account surface", () => {
     expect(shellSource).toContain("Sign out?");
     expect(shellSource).toContain("Cancel");
     expect(shellSource).toContain("<form action={signOutUser}>");
-    expect(shellSource).toContain("onRequestSignOut={() => setSignOutConfirmOpen(true)}");
+    expect(shellSource).toContain("function requestSignOut()");
+    expect(shellSource).toContain("setSignOutConfirmOpen(true)");
+    expect(shellSource).toContain("onRequestSignOut={requestSignOut}");
     expect(shellSource).toContain("signOutConfirmOpen ? (");
     expect(shellSource).toContain("<SignOutDialog");
   });

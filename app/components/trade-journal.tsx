@@ -445,6 +445,37 @@ function getInitials(name: string) {
     .join("");
 }
 
+function AccountAvatar({
+  userName,
+  userImage,
+  size = "sm",
+}: {
+  userName: string;
+  userImage?: string | null;
+  size?: "sm" | "md";
+}) {
+  const dimensions = size === "md" ? "h-9 w-9 text-[12px]" : "h-8 w-8 text-[11px]";
+
+  if (userImage) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={userImage}
+        alt=""
+        className={`${dimensions} shrink-0 rounded-full border border-white/20 object-cover`}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${dimensions} flex shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] font-bold text-white`}
+    >
+      {getInitials(userName)}
+    </div>
+  );
+}
+
 function getMoneyTone(value: number | null): MoneyTone {
   if (value === null || value === 0) {
     return "neutral";
@@ -1141,6 +1172,98 @@ function SignOutDialog({ onCancel }: { onCancel: () => void }) {
   );
 }
 
+function AccountMenu({
+  userName,
+  userEmail,
+  userImage,
+  align = "right",
+  placement = "top",
+  onClose,
+  onSettings,
+  onSignOut,
+}: {
+  userName: string;
+  userEmail?: string | null;
+  userImage?: string | null;
+  align?: "left" | "right";
+  placement?: "top" | "bottom";
+  onClose: () => void;
+  onSettings: () => void;
+  onSignOut: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        menuRef.current &&
+        event.target instanceof Node &&
+        !menuRef.current.contains(event.target)
+      ) {
+        onClose();
+      }
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const horizontalClass = align === "left" ? "left-0" : "right-0";
+  const verticalClass = placement === "top" ? "bottom-full mb-2" : "top-full mt-2";
+
+  return (
+    <div
+      ref={menuRef}
+      className={`absolute z-40 w-[240px] overflow-hidden rounded-lg border border-[#E6E8EF] bg-white shadow-xl ${horizontalClass} ${verticalClass}`}
+      role="menu"
+      aria-label="Account menu"
+    >
+      <div className="flex items-center gap-3 border-b border-[#E6E8EF] px-3 py-3">
+        <AccountAvatar userName={userName} userImage={userImage} size="md" />
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-semibold text-[#171923]">
+            {userName}
+          </p>
+          <p className="truncate text-[12px] text-[#697386]">
+            {userEmail ?? "No email available"}
+          </p>
+        </div>
+      </div>
+      <div className="p-1.5">
+        <button
+          type="button"
+          onClick={onSettings}
+          className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] font-medium text-[#171923] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+          role="menuitem"
+        >
+          <Settings size={14} aria-hidden="true" />
+          Settings
+        </button>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="mt-0.5 flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] font-medium text-[#E25555] transition hover:bg-[#FFF8F8] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+          role="menuitem"
+        >
+          <LogOut size={14} aria-hidden="true" />
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ProfileOnboardingDialog({
   form,
   saving,
@@ -1358,14 +1481,26 @@ function Sidebar({
   activeView,
   userName,
   userEmail,
+  userImage,
+  accountMenuOpen,
   onAddTrade,
   onNav,
+  onToggleAccountMenu,
+  onCloseAccountMenu,
+  onAccountSettings,
+  onRequestSignOut,
 }: {
   activeView: DashboardView;
   userName: string;
   userEmail?: string | null;
+  userImage?: string | null;
+  accountMenuOpen: boolean;
   onAddTrade: () => void;
   onNav: (view: DashboardView) => void;
+  onToggleAccountMenu: () => void;
+  onCloseAccountMenu: () => void;
+  onAccountSettings: () => void;
+  onRequestSignOut: () => void;
 }) {
   return (
     <aside className="hidden h-dvh w-[220px] shrink-0 overflow-y-auto border-r border-white/10 bg-[#1E1B2E] lg:block">
@@ -1377,20 +1512,6 @@ function Sidebar({
           <span className="text-[15px] font-bold tracking-normal text-white">
             MarketPilot
           </span>
-        </div>
-
-        <div className="mx-3 mb-4 rounded-lg bg-white/5 px-3 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[10px] font-bold text-white">
-                {getInitials(userName).slice(0, 1)}
-              </div>
-              <p className="truncate text-[12px] font-medium text-white">
-                Futures Journal
-              </p>
-            </div>
-            <ChevronDown size={13} color="#A8A5C1" aria-hidden="true" />
-          </div>
         </div>
 
         <div className="px-3 pb-5">
@@ -1431,20 +1552,38 @@ function Sidebar({
           })}
         </nav>
 
-        <div className="mt-auto p-3">
-          <div className="flex items-center gap-2.5 rounded-lg bg-white/5 px-3 py-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#6C5DD3] text-[11px] font-bold text-white">
-              {getInitials(userName)}
-            </div>
+        <div className="relative mt-auto p-3">
+          <button
+            type="button"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={onToggleAccountMenu}
+            className="flex w-full items-center gap-2.5 rounded-lg bg-white/5 px-3 py-2 text-left transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/60"
+            aria-haspopup="menu"
+            aria-expanded={accountMenuOpen}
+            aria-label="Open account menu"
+          >
+            <AccountAvatar userName={userName} userImage={userImage} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12px] font-medium text-white">
                 {userName}
               </p>
               <p className="truncate text-[11px] text-[#A8A5C1]">
-                {userEmail}
+                {userEmail ?? "No email available"}
               </p>
             </div>
-          </div>
+            <ChevronDown size={13} color="#A8A5C1" aria-hidden="true" />
+          </button>
+          {accountMenuOpen ? (
+            <AccountMenu
+              userName={userName}
+              userEmail={userEmail}
+              userImage={userImage}
+              align="left"
+              onClose={onCloseAccountMenu}
+              onSettings={onAccountSettings}
+              onSignOut={onRequestSignOut}
+            />
+          ) : null}
         </div>
       </div>
     </aside>
@@ -1488,14 +1627,28 @@ function TopBar({
   title,
   subtitle,
   userName,
+  userEmail,
+  userImage,
+  accountMenuOpen,
   analyticsRange,
   onRangeChange,
+  onToggleAccountMenu,
+  onCloseAccountMenu,
+  onAccountSettings,
+  onRequestSignOut,
 }: {
   title: string;
   subtitle: string;
   userName: string;
+  userEmail?: string | null;
+  userImage?: string | null;
+  accountMenuOpen: boolean;
   analyticsRange: AnalyticsRangeKey;
   onRangeChange: (range: AnalyticsRangeKey) => void;
+  onToggleAccountMenu: () => void;
+  onCloseAccountMenu: () => void;
+  onAccountSettings: () => void;
+  onRequestSignOut: () => void;
 }) {
   return (
     <header className="flex min-h-[54px] shrink-0 flex-col gap-3 border-b border-[#E6E8EF] bg-white px-4 py-3 xl:flex-row xl:items-center xl:justify-between lg:px-5">
@@ -1534,17 +1687,29 @@ function TopBar({
           })}
         </div>
 
-        <form action={signOutUser}>
+        <div className="relative">
           <button
-            type="submit"
-            className="h-8 rounded-md border border-[#E6E8EF] bg-white px-3 text-[12px] font-medium text-[#697386] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+            type="button"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={onToggleAccountMenu}
+            className="flex h-8 w-8 items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-[#6C5DD3] focus:ring-offset-1"
+            aria-haspopup="menu"
+            aria-expanded={accountMenuOpen}
+            aria-label="Open account menu"
           >
-            Sign out
+            <AccountAvatar userName={userName} userImage={userImage} />
           </button>
-        </form>
-
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#6C5DD3] text-[11px] font-bold text-white">
-          {getInitials(userName)}
+          {accountMenuOpen ? (
+            <AccountMenu
+              userName={userName}
+              userEmail={userEmail}
+              userImage={userImage}
+              placement="bottom"
+              onClose={onCloseAccountMenu}
+              onSettings={onAccountSettings}
+              onSignOut={onRequestSignOut}
+            />
+          ) : null}
         </div>
       </div>
     </header>
@@ -2839,8 +3004,10 @@ function SettingsView({
   trades,
   playbooks,
   report,
+  activeSettingsTab,
   onUpdateProfileForm,
   onSubmitProfile,
+  onSettingsTabChange,
   onRequestSignOut,
 }: {
   userName: string;
@@ -2859,15 +3026,15 @@ function SettingsView({
   trades: TradeDto[];
   playbooks: PlaybookDto[];
   report: AnalyticsReport;
+  activeSettingsTab: SettingsTab;
   onUpdateProfileForm: <Key extends keyof ProfileFormState>(
     key: Key,
     value: ProfileFormState[Key]
   ) => void;
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void;
+  onSettingsTabChange: (tab: SettingsTab) => void;
   onRequestSignOut: () => void;
 }) {
-  const [activeSettingsTab, setActiveSettingsTab] =
-    useState<SettingsTab>("profile");
   const journaledTrades = trades.filter((trade) => trade.journalEntry).length;
   const totalRisk = trades.reduce((sum, trade) => sum + trade.riskDollars, 0);
   const latestTrade = trades[0]?.openedAt
@@ -2899,7 +3066,7 @@ function SettingsView({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveSettingsTab(tab.id)}
+                  onClick={() => onSettingsTabChange(tab.id)}
                   aria-pressed={selected}
                   className={`h-9 shrink-0 rounded-md px-3 text-left text-[12px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#6C5DD3] ${
                     selected
@@ -4295,6 +4462,11 @@ export default function TradeJournal({
     string[]
   >([]);
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
+  const [openAccountMenu, setOpenAccountMenu] = useState<"topbar" | "sidebar" | null>(
+    null
+  );
+  const [activeSettingsTab, setActiveSettingsTab] =
+    useState<SettingsTab>("profile");
   const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
   const displayName =
     profile?.displayName || userName || userEmail || "Authenticated trader";
@@ -4386,6 +4558,8 @@ export default function TradeJournal({
   }, [activeView]);
 
   function navigateToView(view: DashboardView, resetScroll = true) {
+    setOpenAccountMenu(null);
+
     if (resetScroll) {
       if (view === activeView) {
         resetShellScroll();
@@ -4407,6 +4581,17 @@ export default function TradeJournal({
     const query = params.toString();
     const pathname = window.location.pathname;
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  function openSettingsProfile() {
+    setOpenAccountMenu(null);
+    setActiveSettingsTab("profile");
+    navigateToView("settings");
+  }
+
+  function requestSignOut() {
+    setOpenAccountMenu(null);
+    setSignOutConfirmOpen(true);
   }
 
   function updateTradeSort(key: TradeSortKey) {
@@ -4902,8 +5087,18 @@ export default function TradeJournal({
           activeView={activeView}
           userName={displayName}
           userEmail={userEmail}
+          userImage={userImage}
+          accountMenuOpen={openAccountMenu === "sidebar"}
           onAddTrade={openNewTrade}
           onNav={navigateToView}
+          onToggleAccountMenu={() =>
+            setOpenAccountMenu((current) =>
+              current === "sidebar" ? null : "sidebar"
+            )
+          }
+          onCloseAccountMenu={() => setOpenAccountMenu(null)}
+          onAccountSettings={openSettingsProfile}
+          onRequestSignOut={requestSignOut}
         />
 
         <main className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
@@ -4911,8 +5106,19 @@ export default function TradeJournal({
             title={meta.title}
             subtitle={meta.subtitle}
             userName={displayName}
+            userEmail={userEmail}
+            userImage={userImage}
+            accountMenuOpen={openAccountMenu === "topbar"}
             analyticsRange={analyticsRange}
             onRangeChange={updateAnalyticsRange}
+            onToggleAccountMenu={() =>
+              setOpenAccountMenu((current) =>
+                current === "topbar" ? null : "topbar"
+              )
+            }
+            onCloseAccountMenu={() => setOpenAccountMenu(null)}
+            onAccountSettings={openSettingsProfile}
+            onRequestSignOut={requestSignOut}
           />
           <MobileNav activeView={activeView} onNav={navigateToView} />
 
@@ -5048,9 +5254,11 @@ export default function TradeJournal({
                 trades={trades}
                 playbooks={playbooks}
                 report={analyticsReport}
+                activeSettingsTab={activeSettingsTab}
                 onUpdateProfileForm={updateProfileForm}
                 onSubmitProfile={handleProfileSubmit}
-                onRequestSignOut={() => setSignOutConfirmOpen(true)}
+                onSettingsTabChange={setActiveSettingsTab}
+                onRequestSignOut={requestSignOut}
               />
             ) : null}
           </div>
