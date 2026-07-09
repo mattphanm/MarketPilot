@@ -336,3 +336,56 @@ describe("settings profile editing", () => {
     );
   });
 });
+
+describe("real settings account surface", () => {
+  it("keeps Settings limited to real Profile and Account tabs", () => {
+    const settingsSource = shellSource.slice(
+      shellSource.indexOf("function SettingsView"),
+      shellSource.indexOf("function TradeLogView")
+    );
+
+    expect(shellSource).toContain('type SettingsTab = "profile" | "account"');
+    expect(settingsSource).toContain('{ id: "profile", label: "Profile" }');
+    expect(settingsSource).toContain('{ id: "account", label: "Account" }');
+    expect(settingsSource).toContain('aria-label="Settings sections"');
+    expect(settingsSource).not.toContain("Notifications");
+    expect(settingsSource).not.toContain("Appearance");
+    expect(settingsSource).not.toContain("Billing");
+    expect(settingsSource).not.toContain("Connections");
+    expect(settingsSource).not.toContain("Security");
+    expect(settingsSource).not.toContain("Delete Account");
+    expect(settingsSource).not.toContain("Avatar");
+  });
+
+  it("shows only server-backed read-only account and workspace facts", () => {
+    expect(pageSource).toContain("providerAccountId: true");
+    expect(pageSource).toContain("accountProviderAccountId={account?.providerAccountId}");
+
+    const settingsSource = shellSource.slice(
+      shellSource.indexOf("function SettingsView"),
+      shellSource.indexOf("function TradeLogView")
+    );
+
+    expect(settingsSource).toContain('["Email", userEmail ?? "No email available"]');
+    expect(settingsSource).toContain('["Sign-in provider", providerLabel]');
+    expect(settingsSource).toContain(
+      '["Provider account", accountProviderAccountId ?? "Not available"]'
+    );
+    expect(settingsSource).toContain('["Account type", accountType ?? "Not available"]');
+    expect(settingsSource).toContain('["Email status", emailStatus]');
+    expect(settingsSource).toContain("<SectionTitle>Workspace Summary</SectionTitle>");
+    expect(settingsSource).toContain('["Total Trades", numberFormatter.format(trades.length)]');
+    expect(settingsSource).toContain('["Playbooks", numberFormatter.format(playbooks.length)]');
+  });
+
+  it("routes Account sign-out through a simple confirmation dialog", () => {
+    expect(shellSource).toContain("function SignOutDialog");
+    expect(shellSource).toContain('aria-labelledby="sign-out-title"');
+    expect(shellSource).toContain("Sign out?");
+    expect(shellSource).toContain("Cancel");
+    expect(shellSource).toContain("<form action={signOutUser}>");
+    expect(shellSource).toContain("onRequestSignOut={() => setSignOutConfirmOpen(true)}");
+    expect(shellSource).toContain("signOutConfirmOpen ? (");
+    expect(shellSource).toContain("<SignOutDialog");
+  });
+});

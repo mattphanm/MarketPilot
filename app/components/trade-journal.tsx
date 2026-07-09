@@ -80,6 +80,7 @@ type TradeJournalProps = {
   userEmail?: string | null;
   userImage?: string | null;
   accountProvider?: string | null;
+  accountProviderAccountId?: string | null;
   accountType?: string | null;
   emailVerifiedIso?: string | null;
   initialProfile: InitialProfile;
@@ -127,6 +128,8 @@ type ProfileFormState = {
 };
 
 type ProfileFieldErrors = Partial<Record<keyof ProfileFormState, string>>;
+
+type SettingsTab = "profile" | "account";
 
 type ApiIssue = {
   path?: Array<string | number>;
@@ -1085,6 +1088,53 @@ function DeleteTradeDialog({
           >
             {deleting ? "Deleting" : "Delete Trade"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignOutDialog({ onCancel }: { onCancel: () => void }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sign-out-title"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-3 sm:p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
+      <div className="w-full max-w-[380px] rounded-lg bg-white shadow-2xl">
+        <div className="border-b border-[#E6E8EF] px-5 py-4">
+          <p
+            id="sign-out-title"
+            className="text-[17px] font-bold text-[#171923]"
+          >
+            Sign out?
+          </p>
+          <p className="mt-1 text-[13px] leading-5 text-[#697386]">
+            You will need to sign in again to use MarketPilot.
+          </p>
+        </div>
+        <div className="flex flex-col-reverse gap-2 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-9 rounded-md border border-[#E6E8EF] px-3 text-[12px] font-medium text-[#697386] transition hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+          >
+            Cancel
+          </button>
+          <form action={signOutUser}>
+            <button
+              type="submit"
+              className="h-9 w-full rounded-md bg-[#E25555] px-3 text-[12px] font-semibold text-white transition hover:bg-[#C83F3F] focus:outline-none focus:ring-2 focus:ring-[#E25555]/30 sm:w-auto"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       </div>
     </div>
@@ -2777,6 +2827,7 @@ function SettingsView({
   userEmail,
   userImage,
   accountProvider,
+  accountProviderAccountId,
   accountType,
   emailVerifiedIso,
   profileForm,
@@ -2790,11 +2841,13 @@ function SettingsView({
   report,
   onUpdateProfileForm,
   onSubmitProfile,
+  onRequestSignOut,
 }: {
   userName: string;
   userEmail?: string | null;
   userImage?: string | null;
   accountProvider?: string | null;
+  accountProviderAccountId?: string | null;
   accountType?: string | null;
   emailVerifiedIso?: string | null;
   profileForm: ProfileFormState;
@@ -2811,7 +2864,10 @@ function SettingsView({
     value: ProfileFormState[Key]
   ) => void;
   onSubmitProfile: (event: FormEvent<HTMLFormElement>) => void;
+  onRequestSignOut: () => void;
 }) {
+  const [activeSettingsTab, setActiveSettingsTab] =
+    useState<SettingsTab>("profile");
   const journaledTrades = trades.filter((trade) => trade.journalEntry).length;
   const totalRisk = trades.reduce((sum, trade) => sum + trade.riskDollars, 0);
   const latestTrade = trades[0]?.openedAt
@@ -2823,68 +2879,42 @@ function SettingsView({
   const emailStatus = emailVerifiedIso
     ? `Verified ${dateFormatter.format(new Date(emailVerifiedIso))}`
     : "Not verified";
+  const settingsTabs = [
+    { id: "profile", label: "Profile" },
+    { id: "account", label: "Account" },
+  ] as const satisfies Array<{ id: SettingsTab; label: string }>;
 
   return (
-    <div className="space-y-3 p-4 lg:p-5">
-      <div className="grid gap-3 xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,0.58fr)]">
-        <AppCard className="overflow-hidden !p-0">
-          <div className="border-b border-[#E6E8EF] bg-[#F7F8FA] px-4 py-3">
-            <SectionTitle>Account</SectionTitle>
-          </div>
-          <div className="p-4">
-            <div className="flex items-center gap-3">
-              {userImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={userImage}
-                  alt=""
-                  className="h-12 w-12 rounded-full border border-[#E6E8EF] object-cover"
-                />
-              ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#6C5DD3] text-[15px] font-bold text-white">
-                  {getInitials(userName)}
-                </div>
-              )}
-              <div className="min-w-0">
-                <div className="truncate text-[15px] font-semibold text-[#171923]">
-                  {userName}
-                </div>
-                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-[#697386]">
-                  <Mail size={12} aria-hidden="true" />
-                  <span className="truncate">
-                    {userEmail ?? "No email available"}
-                  </span>
-                </div>
-              </div>
-            </div>
+    <div className="p-4 lg:p-5">
+      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="rounded-lg border border-[#E6E8EF] bg-white p-2">
+          <nav
+            className="flex gap-1 overflow-x-auto lg:flex-col"
+            aria-label="Settings sections"
+          >
+            {settingsTabs.map((tab) => {
+              const selected = activeSettingsTab === tab.id;
 
-            <div className="mt-4 space-y-2 text-[12px]">
-              {[
-                ["Sign-in provider", providerLabel],
-                ["Account type", accountType ?? "Not available"],
-                ["Email status", emailStatus],
-              ].map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-3">
-                  <span className="text-[#697386]">{label}</span>
-                  <span className="text-right font-medium text-[#171923]">
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveSettingsTab(tab.id)}
+                  aria-pressed={selected}
+                  className={`h-9 shrink-0 rounded-md px-3 text-left text-[12px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#6C5DD3] ${
+                    selected
+                      ? "bg-[#6C5DD3] text-white"
+                      : "text-[#697386] hover:bg-[#F7F8FA] hover:text-[#171923]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
 
-            <form action={signOutUser} className="mt-4">
-              <button
-                type="submit"
-                className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[#E6E8EF] bg-white px-3 text-[12px] font-semibold text-[#E25555] transition hover:border-[#F2C2C2] hover:bg-[#FFF8F8] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
-              >
-                <LogOut size={14} aria-hidden="true" />
-                Sign out
-              </button>
-            </form>
-          </div>
-        </AppCard>
-
+        {activeSettingsTab === "profile" ? (
         <AppCard>
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -3023,6 +3053,68 @@ function SettingsView({
             </div>
           </form>
         </AppCard>
+        ) : null}
+
+        {activeSettingsTab === "account" ? (
+        <div className="grid gap-3 xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,0.58fr)]">
+        <AppCard className="overflow-hidden !p-0">
+          <div className="border-b border-[#E6E8EF] bg-[#F7F8FA] px-4 py-3">
+            <SectionTitle>Account</SectionTitle>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              {userImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={userImage}
+                  alt=""
+                  className="h-12 w-12 rounded-full border border-[#E6E8EF] object-cover"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#6C5DD3] text-[15px] font-bold text-white">
+                  {getInitials(userName)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="truncate text-[15px] font-semibold text-[#171923]">
+                  {userName}
+                </div>
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-[#697386]">
+                  <Mail size={12} aria-hidden="true" />
+                  <span className="truncate">
+                    {userEmail ?? "No email available"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2 text-[12px]">
+              {[
+                ["Email", userEmail ?? "No email available"],
+                ["Sign-in provider", providerLabel],
+                ["Provider account", accountProviderAccountId ?? "Not available"],
+                ["Account type", accountType ?? "Not available"],
+                ["Email status", emailStatus],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-3">
+                  <span className="text-[#697386]">{label}</span>
+                  <span className="min-w-0 break-words text-right font-medium text-[#171923]">
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={onRequestSignOut}
+              className="mt-4 flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[#E6E8EF] bg-white px-3 text-[12px] font-semibold text-[#E25555] transition hover:border-[#F2C2C2] hover:bg-[#FFF8F8] focus:outline-none focus:ring-2 focus:ring-[#6C5DD3]"
+            >
+              <LogOut size={14} aria-hidden="true" />
+              Sign out
+            </button>
+          </div>
+        </AppCard>
 
         <AppCard>
           <SectionTitle>Workspace Summary</SectionTitle>
@@ -3042,9 +3134,8 @@ function SettingsView({
             ))}
           </div>
         </AppCard>
-      </div>
 
-      <div className="grid gap-3 xl:grid-cols-2">
+        <div className="grid gap-3 xl:col-span-2 xl:grid-cols-2">
         {[
           {
             title: "Trading Data",
@@ -3079,6 +3170,9 @@ function SettingsView({
             </div>
           </AppCard>
         ))}
+        </div>
+      </div>
+        ) : null}
       </div>
     </div>
   );
@@ -4123,6 +4217,7 @@ export default function TradeJournal({
   userEmail,
   userImage,
   accountProvider,
+  accountProviderAccountId,
   accountType,
   emailVerifiedIso,
   initialProfile,
@@ -4199,6 +4294,7 @@ export default function TradeJournal({
   const [profileUsernameSuggestions, setProfileUsernameSuggestions] = useState<
     string[]
   >([]);
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const currentDate = useMemo(() => new Date(nowIso), [nowIso]);
   const displayName =
     profile?.displayName || userName || userEmail || "Authenticated trader";
@@ -4940,6 +5036,7 @@ export default function TradeJournal({
                 userEmail={userEmail}
                 userImage={userImage}
                 accountProvider={accountProvider}
+                accountProviderAccountId={accountProviderAccountId}
                 accountType={accountType}
                 emailVerifiedIso={emailVerifiedIso}
                 profileForm={profileForm}
@@ -4953,6 +5050,7 @@ export default function TradeJournal({
                 report={analyticsReport}
                 onUpdateProfileForm={updateProfileForm}
                 onSubmitProfile={handleProfileSubmit}
+                onRequestSignOut={() => setSignOutConfirmOpen(true)}
               />
             ) : null}
           </div>
@@ -4976,6 +5074,9 @@ export default function TradeJournal({
           onUpdateForm={updateProfileForm}
           onSubmit={handleProfileSubmit}
         />
+      ) : null}
+      {signOutConfirmOpen ? (
+        <SignOutDialog onCancel={() => setSignOutConfirmOpen(false)} />
       ) : null}
     </div>
   );

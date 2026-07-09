@@ -259,7 +259,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const account = await prisma.account.findFirst({
     where: { userId },
     orderBy: { provider: "asc" },
-    select: { provider: true, type: true },
+    select: { provider: true, providerAccountId: true, type: true },
   });
   const dbUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -291,6 +291,7 @@ export default async function Home({ searchParams }: HomeProps) {
       userEmail={session.user?.email}
       userImage={session.user?.image ?? dbUser?.image}
       accountProvider={account?.provider}
+      accountProviderAccountId={account?.providerAccountId}
       accountType={account?.type}
       emailVerifiedIso={dbUser?.emailVerified?.toISOString() ?? null}
       initialProfile={initialProfile}
