@@ -96,5 +96,5 @@ When the trader switches top-level views, the content panel resets to the top so
 
 - The implementation target is expected to be the authenticated trade journal shell.
 - Per repo instructions, implementation agents must read the relevant Next.js guidance in `node_modules/next/dist/docs/` before writing Next.js code.
-- This PRD is based on `docs/handoffs/marketpilot-scroll-contained-shell-handoff-20260705-213636.md`.
+- This PRD is based on `docs/handoffs/shell-navigation/scroll-contained-shell-2026-07-05.md`.
 - The agreed testing seam is the authenticated shell. Existing seams should be preferred; a new seam should only be introduced if there is no practical way to verify panel scrolling and view-change reset behavior through the shell.

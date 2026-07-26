@@ -28,17 +28,65 @@ _Avoid_: Thesis, memo, comment
 The user's free-text summary of the confirming factors present in a completed trade.
 _Avoid_: Tags, labels
 
+**Confluence Signal**:
+A normalized confirming factor identified in a completed trade's Confluences. Different user phrases may represent the same Confluence Signal.
+_Avoid_: Tag, label, keyword
+
+**Expected Confluence Signal**:
+A Confluence Signal that a Playbook defines as part of the intended setup and uses as a Playbook Criterion for reviewing completed trades.
+_Avoid_: Winning confluence, AI-recommended rule
+
+**Playbook Drift**:
+A sustained pattern of completed trades diverging from the required setup conditions or execution triggers defined by their assigned Playbooks.
+_Avoid_: Single-trade deviation, strategy failure, losing streak
+
+**Playbook Deviation**:
+A confirmed mismatch between one completed trade and a required setup condition or execution trigger in its assigned Playbook.
+_Avoid_: Playbook Drift, losing trade, unknown criterion
+
+**Entry Conviction**:
+The user's retrospective statement of how strongly the setup appeared to support the trade at Entry Time. It is reflective context, not a measure of AI certainty or the statistical reliability of an analysis finding.
+_Avoid_: AI confidence, insight reliability, trade quality
+
 **Playbook**:
 A reusable trading model or setup definition that every completed trade must reference.
 It stores definition fields such as name, description, individual rules, and presentation color; its performance is derived from completed trades assigned to it.
 _Avoid_: Strategy tag, category, playbook tag
 
 **Playbook Rule**:
-One individual criterion or condition that defines a playbook.
+One setup condition or execution trigger that defines when a completed trade fits a Playbook.
 _Avoid_: Bullet, checklist item
 
+**Playbook Criterion**:
+One typed item in a Playbook's review baseline, such as an execution rule, risk rule, Expected Confluence Signal, or invalidation. Its type identifies what evidence can determine whether it was satisfied.
+_Avoid_: Untyped checklist item, AI-generated score
+
+**Rule Importance**:
+The role of a Playbook Criterion in determining alignment: required, supporting, or invalidating. A confirmed missing required criterion or present invalidating criterion creates a Playbook Deviation; a missing supporting criterion does not.
+_Avoid_: Weight, AI confidence
+
+**Playbook Alignment**:
+The determination that a completed trade satisfies the confirmed required criteria and contains none of the confirmed invalidating criteria in its assigned Playbook.
+_Avoid_: Playbook Assignment, winning trade, strategy performance
+
+**Criterion Observation**:
+A present, absent, or unknown finding about one Playbook Criterion for one completed Trade. An AI suggestion remains unverified until the trader confirms or corrects it.
+_Avoid_: AI score, outcome prediction, automatic fact
+
+**Analysis Run**:
+One requested review of a frozen completed-Trade cohort selected by Playbook, Entry-Time Range, or both.
+_Avoid_: Live scan, open-position monitor
+
+**Analysis Report**:
+An immutable versioned snapshot of a completed Analysis Run, including its cohort counts, deterministic metrics, Evidence Strength, findings, and supporting evidence.
+_Avoid_: Live dashboard, mutable summary
+
+**Evidence Strength**:
+A Limited, Moderate, or Strong rating of how much confirmed, relevant, and consistent evidence supports an analysis finding.
+_Avoid_: AI confidence, prediction probability, Entry Conviction
+
 **Playbook Assignment**:
-The required selection of one existing playbook when a user logs a completed trade.
+The required selection of the Playbook a user intended to follow when logging a completed trade. Assignment does not prove Playbook Alignment.
 _Avoid_: Tagging, categorization
 
 **Outcome Status**:

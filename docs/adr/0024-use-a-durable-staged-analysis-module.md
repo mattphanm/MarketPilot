@@ -1,0 +1,3 @@
+# Use a durable staged module for Playbook analysis
+
+MarketPilot will implement AI-assisted Playbook analysis as one deep module whose Postgres state is authoritative across selection, classification batches, trader review, deterministic reduction, and snapshot creation. Authenticated Next.js routes remain thin adapters; an Inngest dispatch adapter initially supplies durable retries and concurrency by carrying only an opaque run ID, while an inline adapter drives the same worker in tests. This supersedes ADR-0017: the journal model is now stable enough for post-trade AI analysis, and request-lifetime background work is not durable enough for resumable large histories.

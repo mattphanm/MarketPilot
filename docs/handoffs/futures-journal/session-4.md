@@ -37,7 +37,7 @@ Then restart `npm run dev`.
 ## Current Repo State When Written
 
 - Latest commit: `1da1ab5 Complete playbook edit and delete flow`.
-- Remaining untracked file observed: `docs/handoffs/marketpilot-issue-003-continuation-handoff.md`.
+- The remaining untracked file observed at the time is now organized at `docs/handoffs/futures-journal/issue-003-continuation.md`.
 - That untracked handoff file pre-existed the final issue 003 commit and was intentionally left untouched.
 
 ## Suggested Skills

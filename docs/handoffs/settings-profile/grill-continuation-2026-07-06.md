@@ -6,7 +6,7 @@ Continue the MarketPilot Settings/Profile grilling session in a fresh context wi
 
 This document is a continuation of:
 
-`docs/handoffs/marketpilot-settings-profile-grill-handoff-20260706.md`
+`docs/handoffs/settings-profile/grill-2026-07-06.md`
 
 Do not duplicate that earlier handoff. Treat it as the base decision record, and apply the additional decisions below.
 

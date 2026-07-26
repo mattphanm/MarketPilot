@@ -13,7 +13,7 @@ Next session focus: finish and commit `docs/issues/futures-journal-figma-integra
 - Acceptance criteria: completed-trade-only Analytics tab, date-range filtering by entry time, playbook performance where relevant, no open/planned/partial/live portfolio concepts, visual screenshot skipped by user request.
 - Repo instruction: this is Next.js 16.2.6; read relevant local docs under `node_modules/next/dist/docs/` before code changes. I read `01-app/01-getting-started/15-route-handlers.md`.
 - Existing analytics already derives P&L from `riskDollars * rMultiple` and uses `openedAt` as the activity date.
-- The worktree had an unrelated untracked file before edits: `docs/handoffs/marketpilot-issue-014-handoff.md`. Leave it alone.
+- The worktree had an unrelated untracked file before edits, now organized at `docs/handoffs/futures-journal/issue-014-playbook-performance.md`.
 
 ## What Was Implemented Before Interruption
 
@@ -49,7 +49,7 @@ Also review whether the global `TopBar` range control should remain visible on n
   - shared filtering behavior used for playbook performance.
 - Consider updating `AnalyticsReport` field names eventually, but keep scope small unless needed. Existing `closedTrades`/`openTrades` fields are still present even though UI should avoid open/live concepts.
 - Update issue 017 acceptance checkboxes except the visual screenshot item, or mark the visual item as intentionally skipped per user instruction if that is the repo convention.
-- Commit only relevant changes. Do not include unrelated `docs/handoffs/marketpilot-issue-014-handoff.md`.
+- Commit only relevant changes. The referenced Issue 014 handoff is now organized at `docs/handoffs/futures-journal/issue-014-playbook-performance.md`.
 
 ## Verification Notes
 

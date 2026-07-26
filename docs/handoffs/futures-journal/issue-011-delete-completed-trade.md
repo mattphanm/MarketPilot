@@ -1,4 +1,4 @@
-MarketPilot issue 011 delete completed trade handoff
+# MarketPilot Issue 011 Delete Completed Trade Handoff
 
 Focus for next session
 
@@ -63,4 +63,3 @@ Suggested skills
 - `mattpocock-skills:diagnosing-bugs` or `diagnosing-bugs`: only if delete behavior fails during verification.
 
 No visual checks needed
-

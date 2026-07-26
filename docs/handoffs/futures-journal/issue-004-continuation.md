@@ -2,7 +2,7 @@
 
 ## Focus
 
-Continue interrupted implementation of `docs/issues/futures-journal-figma-integration/004-log-first-completed-futures-trade.md` using `docs/handoffs/marketpilot-issue-004-implementation-handoff.md` as the source context. Do not look in GitHub.
+Continue interrupted implementation of `docs/issues/futures-journal-figma-integration/004-log-first-completed-futures-trade.md` using `docs/handoffs/futures-journal/issue-004-implementation.md` as the source context. Do not look in GitHub.
 
 ## Suggested Skills
 
@@ -29,9 +29,9 @@ Files already edited:
 
 Existing unrelated untracked handoff docs were present before this session:
 
-- `docs/handoffs/marketpilot-issue-003-continuation-handoff.md`
-- `docs/handoffs/marketpilot-issue-004-implementation-handoff.md`
-- `docs/handoffs/marketpilot-session-4-handoff.md`
+- `docs/handoffs/futures-journal/issue-003-continuation.md`
+- `docs/handoffs/futures-journal/issue-004-implementation.md`
+- `docs/handoffs/futures-journal/session-4.md`
 
 ## What Was Implemented So Far
 

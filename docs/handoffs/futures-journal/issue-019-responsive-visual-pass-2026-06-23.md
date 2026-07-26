@@ -54,6 +54,6 @@ Focus for next session: implement and commit `docs/issues/futures-journal-figma-
 ## Current Git Notes
 
 - At interruption time, `git status --short` showed two untracked files unrelated to this issue:
-  - `docs/handoffs/marketpilot-issue-014-handoff.md`
+  - `docs/handoffs/futures-journal/issue-014-playbook-performance.md`
   - `docs/issues/futures-journal-figma-integration/marketpilot-issue-017-handoff.md`
 - Leave those untouched unless the user explicitly asks otherwise.

@@ -67,4 +67,3 @@ Next focus: finish `docs/issues/futures-journal-figma-integration/014-playbook-p
 
 - `mattpocock-skills:implement` to finish the issue and commit.
 - `mattpocock-skills:tdd` if continuing test-first on the pure playbook performance module.
-

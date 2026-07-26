@@ -21,4 +21,3 @@ The current repo test setup is Vitest-only and does not include Playwright, Cypr
 - Local actions preserve scroll: while scrolled, open Add Trade, edit a completed trade, change Trade Log search, result filter, side filter, and sort; confirm these actions do not unexpectedly jump the content panel.
 - Overlays: while scrolled, open the trade detail drawer and delete dialog; confirm they overlay the shell correctly and their internal content remains scrollable where applicable.
 - Keyboard behavior: tab from top controls into lower content; confirm focus is brought into view inside the content panel, the document itself does not scroll, and focus can leave controls normally.
-
